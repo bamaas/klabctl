@@ -2,10 +2,86 @@ package cli
 
 import (
 	"fmt"
+	"os"
+	"strings"
+	"text/template"
 
-	"github.com/spf13/cobra"
 	"github.com/bamaas/klabctl/internal/config"
+	"github.com/spf13/cobra"
 )
+
+// TemplateData holds the data used for templating
+type TemplateData struct {
+	Site     *config.Site
+	Versions map[string]string
+}
+
+// RenderKustomizationTemplate renders the kustomization.yaml.tmpl template
+func RenderKustomizationTemplate(site *config.Site, templatePath, outputPath string) error {
+	// Default versions for common components
+	versions := map[string]string{
+		"external-dns": "6.15.0",
+		"cert-manager": "1.15.0",
+		"nginx":        "15.0.0",
+		"metallb":      "0.14.0",
+	}
+
+	// Create template with custom functions
+	funcMap := template.FuncMap{
+		"quote": func(s string) string {
+			return fmt.Sprintf(`"%s"`, s)
+		},
+	}
+
+	tmpl, err := template.New("kustomization.yaml.tmpl").Funcs(funcMap).ParseFiles(templatePath)
+	if err != nil {
+		return fmt.Errorf("failed to parse template %s: %w", templatePath, err)
+	}
+
+	data := TemplateData{
+		Site:     site,
+		Versions: versions,
+	}
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file %s: %w", outputPath, err)
+	}
+	defer outputFile.Close()
+
+	if err := tmpl.Execute(outputFile, data); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return nil
+}
+
+// RenderKustomizationTemplateToString renders the template to a string
+func RenderKustomizationTemplateToString(site *config.Site, templatePath string) (string, error) {
+
+	// Create template with custom functions
+	funcMap := template.FuncMap{
+		"quote": func(s string) string {
+			return fmt.Sprintf(`"%s"`, s)
+		},
+	}
+
+	tmpl, err := template.New("kustomization.yaml.tmpl").Funcs(funcMap).ParseFiles(templatePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse template %s: %w", templatePath, err)
+	}
+
+	data := TemplateData{
+		Site:     site,
+	}
+
+	var result strings.Builder
+	if err := tmpl.Execute(&result, data); err != nil {
+		return "", fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return result.String(), nil
+}
 
 func newRenderCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -16,131 +92,18 @@ func newRenderCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			fmt.Printf("%+v\n", site)
+
+			// Render the kustomization template
+			templatePath := "templates/kustomization.yaml.tmpl"
+			outputPath := "kustomization.yaml"
+
+			if err := RenderKustomizationTemplate(site, templatePath, outputPath); err != nil {
+				return fmt.Errorf("failed to render template: %w", err)
+			}
+
+			fmt.Printf("Rendered kustomization.yaml from template\n")
 			return nil
-
-// 			name := site.Metadata.Name
-// 			if name == "" {
-// 				return fmt.Errorf("metadata.name is required in %s", sitePath)
-// 			}
-
-// 			outDir := filepath.Join("clusters", name)
-// 			if _, err := os.Stat(outDir); err == nil {
-// 				return fmt.Errorf("output directory %s already exists; remove it or choose another site name", outDir)
-// 			}
-
-// 			dirs := []string{
-// 				outDir,
-// 				filepath.Join(outDir, "flux-system"),
-// 				filepath.Join(outDir, "apps"),
-// 			}
-// 			for _, d := range dirs {
-// 				if err := os.MkdirAll(d, 0o755); err != nil {
-// 					return fmt.Errorf("create %s: %w", d, err)
-// 				}
-// 			}
-
-// 			kustom := "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nresources:\n  - flux-system\n  - apps\n"
-// 			if err := os.WriteFile(filepath.Join(outDir, "kustomization.yaml"), []byte(kustom), 0o644); err != nil {
-// 				return err
-// 			}
-
-// 			ns := "apiVersion: v1\nkind: Namespace\nmetadata:\n  name: apps\n"
-// 			if err := os.WriteFile(filepath.Join(outDir, "apps", "namespace.yaml"), []byte(ns), 0o644); err != nil {
-// 				return err
-// 			}
-
-// 			appsK := "apiVersion: kustomize.config.k8s.io/v1beta1\nkind: Kustomization\nnamespace: apps\nresources: []\n"
-// 			if err := os.WriteFile(filepath.Join(outDir, "apps", "kustomization.yaml"), []byte(appsK), 0o644); err != nil {
-// 				return err
-// 			}
-
-// 			appsReadme := "# Apps\n\nAdd your HelmReleases and Kustomizations here.\n"
-// 			if err := os.WriteFile(filepath.Join(outDir, "apps", "README.md"), []byte(appsReadme), 0o644); err != nil {
-// 				return err
-// 			}
-
-// 			url := site.Spec.GitOps.Repo.URL
-// 			branch := site.Spec.GitOps.Repo.Branch
-// 			if branch == "" {
-// 				branch = "main"
-// 			}
-// 			repoPath := site.Spec.GitOps.Repo.Path
-// 			if repoPath == "" {
-// 				repoPath = filepath.Join("clusters", name)
-// 			}
-// 			gotk := fmt.Sprintf(`apiVersion: source.toolkit.fluxcd.io/v1
-// kind: GitRepository
-// metadata:
-//   name: homelab
-//   namespace: flux-system
-// spec:
-//   interval: 1m
-//   url: %s
-//   ref:
-//     branch: %s
-// ---
-// apiVersion: kustomize.toolkit.fluxcd.io/v1
-// kind: Kustomization
-// metadata:
-//   name: cluster
-//   namespace: flux-system
-// spec:
-//   interval: 10m
-//   path: ./%s
-//   prune: true
-//   sourceRef:
-//     kind: GitRepository
-//     name: homelab
-//   wait: true
-// `, url, branch, repoPath)
-
-// 			if err := os.WriteFile(filepath.Join(outDir, "flux-system", "gotk-sync.yaml"), []byte(gotk), 0o644); err != nil {
-// 				return err
-// 			}
-
-// 			readme := fmt.Sprintf("# %s cluster\n\nThis directory is generated by homectl render from %s.\n\n- Reconcile with Flux by bootstrapping `flux-system` in the cluster and pointing it at this repo.\n", name, sitePath)
-// 			if err := os.WriteFile(filepath.Join(outDir, "README.md"), []byte(readme), 0o644); err != nil {
-// 				return err
-// 			}
-
-// 			// If provider is proxmox, render a site-specific Terraform root and tfvars
-// 			if strings.ToLower(site.Spec.Provider.Name) == "proxmox" {
-// 				modDst := filepath.Join(outDir, "infra", "proxmox", "terraform")
-// 				if err := os.MkdirAll(modDst, 0o755); err != nil {
-// 					return fmt.Errorf("create terraform dir: %w", err)
-// 				}
-
-// 				moduleSource := site.Spec.Provider.Proxmox.ModuleSource
-// 				if moduleSource == "" {
-// 					// Default to the local module in this repo
-// 					// clusters/<site>/infra/proxmox/terraform -> ../../../../../homectl/templates/infra/proxmox/terraform
-// 					moduleSource = "../../../../../homectl/templates/infra/proxmox/terraform"
-// 				}
-// 				moduleVersion := site.Spec.Provider.Proxmox.ModuleVersion
-
-// 				if err := writeProxmoxRootModule(modDst, moduleSource, moduleVersion); err != nil {
-// 					return fmt.Errorf("write terraform root module: %w", err)
-// 				}
-
-// 				tfvars, err := config.BuildProxmoxTfvars(site)
-// 				if err != nil {
-// 					return fmt.Errorf("build proxmox tfvars: %w", err)
-// 				}
-// 				b, err := tfvars.Marshal()
-// 				if err != nil {
-// 					return err
-// 				}
-// 				if err := os.WriteFile(filepath.Join(modDst, "terraform.tfvars.json"), b, 0o600); err != nil {
-// 					return fmt.Errorf("write tfvars: %w", err)
-// 				}
-
-// 				msg := "Rendered Proxmox terraform root and tfvars. Set TF_VAR_proxmox_token_secret in your environment before provisioning.\n"
-// 				io.WriteString(cmd.OutOrStdout(), msg)
-// 			}
-
-// 			fmt.Fprintf(cmd.OutOrStdout(), "Rendered GitOps skeleton to %s\n", outDir)
 		},
 	}
-return cmd
+	return cmd
 }

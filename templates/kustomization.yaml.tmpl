@@ -1,26 +1,3 @@
-apiVersion: helm.toolkit.fluxcd.io/v2
-kind: HelmRelease
-metadata:
-  name: external-dns
-  namespace: external-dns
-spec:
-  interval: 10m
-  chart:
-    spec:
-      chart: external-dns
-      version: {{ index .Versions "external-dns" | quote }}
-      sourceRef:
-        kind: HelmRepository
-        name: bitnami
-        namespace: flux-system
-  values:
-    provider: cloudflare
-    domainFilters:
-      - {{ .Site.Spec.Network.ExternalDNS.Zone | quote }}
-    cloudflare:
-      apiTokenSecretRef:
-        name: cloudflare-api-token
-        key: token
-    policy: sync
-    registry: txt
-    txtOwnerId: {{ .Site.Metadata.Name }}
+---
+resources:
+  - {{ .Site.Spec.Apps.ModuleSource }}/{{ .Site.Spec.Apps.ModulePath }}/{{ .Site.Spec.Apps.Components }}?ref={{ .Site.Spec.Apps.ModuleRef }}
