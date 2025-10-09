@@ -1,0 +1,72 @@
+apiVersion: klab/v1alpha1
+kind: Site
+metadata:
+  name: myhome
+spec:
+  provider:
+    name: proxmox
+    proxmox:
+      endpoint: "https://pve.local:8006/api2/json"
+      insecure: true
+      tokenID: "root@pam!tf"
+      isoNode: "pve"
+      isoDatastore: "local"
+      vmNode: "pve"
+      vmDatastore: "local-lvm"
+      bridge: "vmbr0"
+      vlanTag: 0
+      osDiskSizeGB: 40
+      cpuCores: 4
+      memoryMiB: 8192
+      talosISOURL: "https://github.com/siderolabs/talos/releases/download/v1.7.0/talos-amd64.iso"
+      # Terraform module override (optional)
+      moduleSource: "../../../../../homectl/templates/infra/proxmox/terraform"
+      # moduleVersion: "x.y.z"
+
+  inventory:
+    controlPlane:
+      - hostname: my-cp1
+      - hostname: my-cp2
+      - hostname: my-cp3
+    workers:
+      - hostname: my-w1
+
+  cluster:
+    distribution: talos
+    k8sVersion: "1.30.2"
+    cni: cilium
+    controlPlaneVip: 192.168.10.10
+
+  gitops:
+    provider: argocd
+    repo:
+      url: "https://github.com/you/homelab-sites.git"
+      path: "clusters/bas-home"
+      branch: "main"
+
+  # Apps “base” (remote) + site overlays (local)
+  apps:
+    moduleSource: "https://github.com/you/homelab-apps.git"  # remote apps base repo
+    moduleRef: "v1.2.3"                                     # pin to tag or commit SHA
+    modulePath: "clusters/base"                             # base root path
+    # Optional: which overlays to scaffold as separate Argo CD Applications
+    components:
+      - networking
+      - certificates
+      - external-dns
+      - storage
+      - observability
+
+  # Values used to generate site overlays (resources/patches)
+  network:
+    certManager:
+      email: you@example.com
+    externalDNS:
+      zone: example.com
+      apiTokenRef: cloudflare/prod/token
+    ingressController: nginx
+    metalLB:
+      addressPools:
+        - name: default
+          addresses:
+            - 192.168.8.200-192.168.8.220

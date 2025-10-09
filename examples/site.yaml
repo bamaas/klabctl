@@ -1,0 +1,32 @@
+apiVersion: klab/v1alpha1
+kind: Site
+metadata:
+  name: myhome
+spec:
+
+  # Apps “base” (remote) + site overlays (local)
+  apps:
+    moduleSource: "https://github.com/bamaas/HomeLab-2.0"
+    moduleRef: "main"
+    modulePath: "apps/base"
+    # # Optional: which overlays to scaffold as separate Argo CD Applications
+    components:
+      - cnpg
+      # - certificates
+      # - external-dns
+      # - storage
+      # - observability
+
+  # # Values used to generate site overlays (resources/patches)
+  # network:
+  #   certManager:
+  #     email: you@example.com
+  #   externalDNS:
+  #     zone: example.com
+  #     apiTokenRef: cloudflare/prod/token
+  #   ingressController: nginx
+  #   metalLB:
+  #     addressPools:
+  #       - name: default
+  #         addresses:
+  #           - 192.168.8.200-192.168.8.220
