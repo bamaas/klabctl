@@ -1,0 +1,7 @@
+{{- define "additional-resources" }}
+  - lets-encrypt-cluster-issuer-prd.yaml
+  - lets-encrypt-cluster-issuer-stg.yaml
+  - cloudflare-api-token.yaml
+{{- end -}}
+
+{{- template "base" . }}

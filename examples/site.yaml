@@ -38,7 +38,7 @@ spec:
       cert-manager:
         enabled: true
         values:
-          solver: cloudflare
-          # keep email under spec.network.certManager.email for reuse, but you could duplicate here if your base needs it here
+          letsencrypt:
+            email: test@test.com
           cloudflare:
-            apiTokenRef: cloudflare/prod/token   # reference only
+            apiToken: 1234567890
