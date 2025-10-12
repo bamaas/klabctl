@@ -2,29 +2,28 @@ package cli
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/template"
 
 	"github.com/bamaas/klabctl/internal/config"
+	"github.com/bamaas/klabctl/internal/templates"
 	"github.com/spf13/cobra"
 )
 
 // TemplateData holds the data used for templating
 type TemplateData struct {
-	Site     *config.Site
-	Versions map[string]string
+	Site          *config.Site
+	Versions      map[string]string
+	Component     *config.Component
+	ComponentName string
+	AllComponents map[string]config.Component
 }
 
-// RenderKustomizationTemplate renders the kustomization.yaml.tmpl template
-func RenderKustomizationTemplate(site *config.Site, templatePath, outputPath string) error {
-	// Default versions for common components
-	versions := map[string]string{
-		"external-dns": "6.15.0",
-		"cert-manager": "1.15.0",
-		"nginx":        "15.0.0",
-		"metallb":      "0.14.0",
-	}
+// RenderComponentKustomizationTemplate renders the kustomization.yaml.tmpl template for a specific component from embedded files
+func RenderKustomizationTemplate(site *config.Site, componentName string, component *config.Component, templateName, outputPath string) error {
 
 	// Create template with custom functions
 	funcMap := template.FuncMap{
@@ -33,14 +32,38 @@ func RenderKustomizationTemplate(site *config.Site, templatePath, outputPath str
 		},
 	}
 
-	tmpl, err := template.New("kustomization.yaml.tmpl").Funcs(funcMap).ParseFiles(templatePath)
+	// Read base template first
+	baseTemplatePath := "apps/base.kustomization.yaml.tmpl"
+	baseContent, err := templates.EmbeddedTemplates.ReadFile(baseTemplatePath)
 	if err != nil {
-		return fmt.Errorf("failed to parse template %s: %w", templatePath, err)
+		return fmt.Errorf("failed to read base template %s: %w", baseTemplatePath, err)
+	}
+
+	// Read component-specific template
+	templateContent, err := templates.EmbeddedTemplates.ReadFile(templateName)
+	if err != nil {
+		return fmt.Errorf("failed to read embedded template %s: %w", templateName, err)
+	}
+
+	// Parse both templates together so "base" template is available
+	tmpl, err := template.New("base").Funcs(funcMap).Parse(string(baseContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse base template: %w", err)
+	}
+
+	// If using a component-specific template, parse it too
+	if templateName != baseTemplatePath {
+		tmpl, err = tmpl.New(templateName).Parse(string(templateContent))
+		if err != nil {
+			return fmt.Errorf("failed to parse template %s: %w", templateName, err)
+		}
 	}
 
 	data := TemplateData{
-		Site:     site,
-		Versions: versions,
+		Site:          site,
+		Component:     component,
+		ComponentName: componentName,
+		AllComponents: site.Spec.Apps.Catalog,
 	}
 
 	outputFile, err := os.Create(outputPath)
@@ -49,16 +72,27 @@ func RenderKustomizationTemplate(site *config.Site, templatePath, outputPath str
 	}
 	defer outputFile.Close()
 
-	if err := tmpl.Execute(outputFile, data); err != nil {
+	// Execute the appropriate template
+	var executeTemplate *template.Template
+	if templateName != baseTemplatePath {
+		executeTemplate = tmpl.Lookup(templateName)
+	} else {
+		executeTemplate = tmpl.Lookup("base")
+	}
+
+	if executeTemplate == nil {
+		return fmt.Errorf("template not found: %s", templateName)
+	}
+
+	if err := executeTemplate.Execute(outputFile, data); err != nil {
 		return fmt.Errorf("failed to execute template: %w", err)
 	}
 
 	return nil
 }
 
-// RenderKustomizationTemplateToString renders the template to a string
-func RenderKustomizationTemplateToString(site *config.Site, templatePath string) (string, error) {
-
+// RenderTemplate renders any template to a file using embedded templates
+func RenderTemplate(site *config.Site, componentName string, component *config.Component, templateName, outputPath string) error {
 	// Create template with custom functions
 	funcMap := template.FuncMap{
 		"quote": func(s string) string {
@@ -66,21 +100,85 @@ func RenderKustomizationTemplateToString(site *config.Site, templatePath string)
 		},
 	}
 
-	tmpl, err := template.New("kustomization.yaml.tmpl").Funcs(funcMap).ParseFiles(templatePath)
+	// Read base template first (for inheritance)
+	baseTemplatePath := "apps/base.kustomization.yaml.tmpl"
+	baseContent, err := templates.EmbeddedTemplates.ReadFile(baseTemplatePath)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse template %s: %w", templatePath, err)
+		return fmt.Errorf("failed to read base template %s: %w", baseTemplatePath, err)
+	}
+
+	// Read component-specific template
+	templateContent, err := templates.EmbeddedTemplates.ReadFile(templateName)
+	if err != nil {
+		return fmt.Errorf("failed to read embedded template %s: %w", templateName, err)
+	}
+
+	// Parse both templates together so "base" template is available
+	tmpl, err := template.New("base").Funcs(funcMap).Parse(string(baseContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse base template: %w", err)
+	}
+
+	// If using a component-specific template, parse it too
+	if templateName != baseTemplatePath {
+		tmpl, err = tmpl.New(templateName).Parse(string(templateContent))
+		if err != nil {
+			return fmt.Errorf("failed to parse template %s: %w", templateName, err)
+		}
 	}
 
 	data := TemplateData{
-		Site:     site,
+		Site:          site,
+		Component:     component,
+		ComponentName: componentName,
+		AllComponents: site.Spec.Apps.Catalog,
 	}
 
-	var result strings.Builder
-	if err := tmpl.Execute(&result, data); err != nil {
-		return "", fmt.Errorf("failed to execute template: %w", err)
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file %s: %w", outputPath, err)
+	}
+	defer outputFile.Close()
+
+	// Execute the appropriate template
+	var executeTemplate *template.Template
+	if templateName != baseTemplatePath {
+		executeTemplate = tmpl.Lookup(templateName)
+	} else {
+		executeTemplate = tmpl.Lookup("base")
 	}
 
-	return result.String(), nil
+	if executeTemplate == nil {
+		return fmt.Errorf("template not found: %s", templateName)
+	}
+
+	if err := executeTemplate.Execute(outputFile, data); err != nil {
+		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return nil
+}
+
+// FindComponentTemplates finds all templates for a specific component
+func FindAppTemplates(componentName string) ([]string, error) {
+	var componentTemplates []string
+
+	// Check for component-specific templates
+	componentDir := fmt.Sprintf("apps/%s/", componentName)
+
+	// Walk through embedded filesystem to find templates for this component
+	err := fs.WalkDir(templates.EmbeddedTemplates, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// Check if this template belongs to the component
+		if strings.HasPrefix(path, componentDir) && strings.HasSuffix(path, ".tmpl") {
+			componentTemplates = append(componentTemplates, path)
+		}
+		return nil
+	})
+
+	return componentTemplates, err
 }
 
 func newRenderCmd() *cobra.Command {
@@ -93,15 +191,61 @@ func newRenderCmd() *cobra.Command {
 				return err
 			}
 
-			// Render the kustomization template
-			templatePath := "templates/kustomization.yaml.tmpl"
-			outputPath := "kustomization.yaml"
+			// Define path to components directory
+			appsPath := filepath.Join("clusters", site.Metadata.Name, "apps")
 
-			if err := RenderKustomizationTemplate(site, templatePath, outputPath); err != nil {
-				return fmt.Errorf("failed to render template: %w", err)
+			// Create components directory if it doesn't exist
+			if err := os.MkdirAll(appsPath, 0755); err != nil {
+				return fmt.Errorf("failed to create apps directory: %w", err)
 			}
 
-			fmt.Printf("Rendered kustomization.yaml from template\n")
+			// Render all templates for each component
+			renderedCount := 0
+			for componentName, component := range site.Spec.Apps.Catalog {
+				if !component.Enabled {
+					continue // Skip disabled components
+				}
+
+				// Create component directory
+				componentPath := filepath.Join(appsPath, componentName)
+				if err := os.MkdirAll(componentPath, 0755); err != nil {
+					return fmt.Errorf("failed to create component directory for %s: %w", componentName, err)
+				}
+
+				// Find all templates for this component
+				componentTemplates, err := FindAppTemplates(componentName)
+				if err != nil {
+					return fmt.Errorf("failed to find templates for component %s: %w", componentName, err)
+				}
+
+				// If no app specific templates found, use base template
+				if len(componentTemplates) == 0 {
+					templateName := "apps/base.kustomization.yaml.tmpl"
+					outputPath := filepath.Join(componentPath, "kustomization.yaml")
+					if err := RenderKustomizationTemplate(site, componentName, &component, templateName, outputPath); err != nil {
+						return fmt.Errorf("failed to render base template for component %s: %w", componentName, err)
+					}
+					renderedCount++
+					continue
+				}
+
+				// Render all app specific templates
+				for _, templateName := range componentTemplates {
+					// Convert template name to output filename
+					// e.g., "apps/pihole/kustomization.yaml.tmpl" -> "kustomization.yaml"
+					// e.g., "apps/pihole/secret-patch.yaml.tmpl" -> "secret-patch.yaml"
+					baseName := filepath.Base(templateName)
+					outputFileName := strings.TrimSuffix(baseName, ".tmpl")
+					outputPath := filepath.Join(componentPath, outputFileName)
+
+					if err := RenderTemplate(site, componentName, &component, templateName, outputPath); err != nil {
+						return fmt.Errorf("failed to render template %s for component %s: %w", templateName, componentName, err)
+					}
+					renderedCount++
+				}
+			}
+
+			fmt.Printf("Rendered %d component kustomization files\n", renderedCount)
 			return nil
 		},
 	}

@@ -28,10 +28,21 @@ type Spec struct {
 
 // Apps defines application configuration
 type Apps struct {
-	ModuleSource string   `yaml:"moduleSource"`
-	ModuleRef    string   `yaml:"moduleRef"`
-	ModulePath   string   `yaml:"modulePath"`
-	Components   []string `yaml:"components,omitempty"`
+	Base    Base                 `yaml:"base"`
+	Catalog map[string]Component `yaml:"catalog"`
+}
+
+// Base defines the base application configuration
+type Base struct {
+	Source string `yaml:"source"`
+	Ref    string `yaml:"ref"`
+	Path   string `yaml:"path"`
+}
+
+// Component defines a component configuration
+type Component struct {
+	Enabled bool                   `yaml:"enabled"`
+	Values  map[string]interface{} `yaml:"values"`
 }
 
 // ParseSite parses a YAML byte slice into a Site struct

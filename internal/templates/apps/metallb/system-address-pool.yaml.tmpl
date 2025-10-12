@@ -1,0 +1,10 @@
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+    name: ingress-address-pool
+spec:
+  addresses:
+    - {{ (index .AllComponents "ingress-nginx").Values.ip }}/32
+  autoAssign: true
+  avoidBuggyIPs: false

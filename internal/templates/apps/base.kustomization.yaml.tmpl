@@ -1,0 +1,6 @@
+{{- define "base" -}}
+---
+resources:
+  - {{ .Site.Spec.Apps.Base.Source }}/{{ .Site.Spec.Apps.Base.Path }}/{{ .ComponentName }}?ref={{ .Site.Spec.Apps.Base.Ref }}
+{{- block "additional-resources" . }}{{- end }}
+{{- end -}}

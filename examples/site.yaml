@@ -6,27 +6,52 @@ spec:
 
   # Apps “base” (remote) + site overlays (local)
   apps:
-    moduleSource: "https://github.com/bamaas/HomeLab-2.0"
-    moduleRef: "main"
-    modulePath: "apps/base"
-    # # Optional: which overlays to scaffold as separate Argo CD Applications
-    components:
-      - cnpg
-      # - certificates
-      # - external-dns
-      # - storage
-      # - observability
+    base:
+      source: "https://github.com/bamaas/HomeLab-2.0"
+      ref: "v1.2.3"      # pin to a tag or commit SHA (avoid main)
+      path: "apps/base"
 
-  # # Values used to generate site overlays (resources/patches)
-  # network:
-  #   certManager:
-  #     email: you@example.com
-  #   externalDNS:
-  #     zone: example.com
-  #     apiTokenRef: cloudflare/prod/token
-  #   ingressController: nginx
-  #   metalLB:
-  #     addressPools:
-  #       - name: default
-  #         addresses:
-  #           - 192.168.8.200-192.168.8.220
+    # Per-component overlays; each becomes its own Argo CD Application (for visibility)
+    catalog:
+
+      pihole:
+        enabled: true
+        values:
+          host: pihole.dev.kubernetes.lan.basmaas.nl
+          ip: 192.168.8.120
+          password: asdfasd
+
+      cilium:
+        enabled: true
+
+      ingress-nginx:
+        enabled: true
+        values:
+          ip: 192.168.8.100
+
+      external-dns:
+        enabled: true
+
+      metallb:
+        enabled: true
+
+      # cert-manager:
+      #   enabled: true
+      #   values:
+      #     solver: cloudflare
+      #     # keep email under spec.network.certManager.email for reuse, but you could duplicate here if your base needs it here
+      #     cloudflare:
+      #       apiTokenRef: cloudflare/prod/token   # reference only
+      # external-dns:
+      #   enabled: true
+      #   values:
+      #     provider: cloudflare
+      #     zone: example.com
+      #     apiTokenRef: cloudflare/prod/token
+      # metallb:
+      #   enabled: true
+      #   values:
+      #     addressPools:
+      #       - name: default
+      #         addresses:
+      #           - 192.168.8.200-192.168.8.220

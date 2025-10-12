@@ -1,0 +1,30 @@
+{{- $piholeHost := .AllComponents.pihole.Values.host -}}
+{{- template "base" . }}
+
+patches:
+  - target:
+      kind: Deployment
+      name: external-dns
+    patch: |-
+      - op: replace
+        path: /spec/template/spec/containers/0/env/0/value
+        value: "https://{{ $piholeHost }}"
+
+  {{- if .Component.Values.piholeTlsSkipVerify }}
+  # Add pihole-tls-skip-verify argument
+  - target:
+      kind: Deployment
+      name: external-dns
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/args/-
+        value: "--pihole-tls-skip-verify"
+  {{- end }}
+
+
+  # Set pihole password
+
+  - target:
+      kind: Secret
+      name: pihole-password
+    path: pihole-password.enc.yaml
