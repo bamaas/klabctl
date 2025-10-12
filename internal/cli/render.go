@@ -32,7 +32,13 @@ func RenderKustomizationTemplate(site *config.Site, componentName string, compon
 		},
 	}
 
-	// Read base template first
+	// Read header template first
+	headerContent, err := templates.EmbeddedTemplates.ReadFile("apps/header.kustomization.yaml.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to read header template: %w", err)
+	}
+
+	// Read base template
 	baseTemplatePath := "apps/base.kustomization.yaml.tmpl"
 	baseContent, err := templates.EmbeddedTemplates.ReadFile(baseTemplatePath)
 	if err != nil {
@@ -45,8 +51,13 @@ func RenderKustomizationTemplate(site *config.Site, componentName string, compon
 		return fmt.Errorf("failed to read embedded template %s: %w", templateName, err)
 	}
 
-	// Parse both templates together so "base" template is available
-	tmpl, err := template.New("base").Funcs(funcMap).Parse(string(baseContent))
+	// Parse all templates together (header, base, and component-specific)
+	tmpl, err := template.New("header").Funcs(funcMap).Parse(string(headerContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse header template: %w", err)
+	}
+
+	tmpl, err = tmpl.New("base").Parse(string(baseContent))
 	if err != nil {
 		return fmt.Errorf("failed to parse base template: %w", err)
 	}
@@ -100,7 +111,13 @@ func RenderTemplate(site *config.Site, componentName string, component *config.C
 		},
 	}
 
-	// Read base template first (for inheritance)
+	// Read header template first
+	headerContent, err := templates.EmbeddedTemplates.ReadFile("apps/header.kustomization.yaml.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to read header template: %w", err)
+	}
+
+	// Read base template (for inheritance)
 	baseTemplatePath := "apps/base.kustomization.yaml.tmpl"
 	baseContent, err := templates.EmbeddedTemplates.ReadFile(baseTemplatePath)
 	if err != nil {
@@ -113,8 +130,13 @@ func RenderTemplate(site *config.Site, componentName string, component *config.C
 		return fmt.Errorf("failed to read embedded template %s: %w", templateName, err)
 	}
 
-	// Parse both templates together so "base" template is available
-	tmpl, err := template.New("base").Funcs(funcMap).Parse(string(baseContent))
+	// Parse all templates together (header, base, and component-specific)
+	tmpl, err := template.New("header").Funcs(funcMap).Parse(string(headerContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse header template: %w", err)
+	}
+
+	tmpl, err = tmpl.New("base").Parse(string(baseContent))
 	if err != nil {
 		return fmt.Errorf("failed to parse base template: %w", err)
 	}
@@ -154,6 +176,90 @@ func RenderTemplate(site *config.Site, componentName string, component *config.C
 
 	if err := executeTemplate.Execute(outputFile, data); err != nil {
 		return fmt.Errorf("failed to execute template: %w", err)
+	}
+
+	return nil
+}
+
+// createRootKustomization creates the root kustomization.yaml that references generated + custom
+func createRootKustomization(site *config.Site, componentName, outputPath string) error {
+	// Read header template first
+	headerContent, err := templates.EmbeddedTemplates.ReadFile("apps/header.kustomization.yaml.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to read header kustomization template: %w", err)
+	}
+
+	// Read root template
+	templateContent, err := templates.EmbeddedTemplates.ReadFile("apps/root.kustomization.yaml.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to read root kustomization template: %w", err)
+	}
+
+	// Parse both templates together
+	tmpl, err := template.New("header").Parse(string(headerContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse header template: %w", err)
+	}
+
+	tmpl, err = tmpl.New("root-kustomization").Parse(string(templateContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse root kustomization template: %w", err)
+	}
+
+	data := struct {
+		Site          *config.Site
+		ComponentName string
+	}{
+		Site:          site,
+		ComponentName: componentName,
+	}
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create root kustomization file: %w", err)
+	}
+	defer outputFile.Close()
+
+	if err := tmpl.ExecuteTemplate(outputFile, "root-kustomization", data); err != nil {
+		return fmt.Errorf("failed to execute root kustomization template: %w", err)
+	}
+
+	return nil
+}
+
+// createCustomKustomizationTemplate creates an empty custom kustomization.yaml template for users
+func createCustomKustomizationTemplate(outputPath string) error {
+	// Read header template first
+	headerContent, err := templates.EmbeddedTemplates.ReadFile("apps/header.kustomization.yaml.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to read header kustomization template: %w", err)
+	}
+
+	// Read custom template
+	templateContent, err := templates.EmbeddedTemplates.ReadFile("apps/custom.kustomization.yaml.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to read custom kustomization template: %w", err)
+	}
+
+	// Parse both templates together
+	tmpl, err := template.New("header").Parse(string(headerContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse header template: %w", err)
+	}
+
+	tmpl, err = tmpl.New("custom-kustomization").Parse(string(templateContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse custom kustomization template: %w", err)
+	}
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create custom kustomization file: %w", err)
+	}
+	defer outputFile.Close()
+
+	if err := tmpl.ExecuteTemplate(outputFile, "custom-kustomization", nil); err != nil {
+		return fmt.Errorf("failed to execute custom kustomization template: %w", err)
 	}
 
 	return nil
@@ -206,10 +312,33 @@ func newRenderCmd() *cobra.Command {
 					continue // Skip disabled components
 				}
 
-				// Create component directory
+				// Create component directory structure
 				componentPath := filepath.Join(appsPath, componentName)
-				if err := os.MkdirAll(componentPath, 0755); err != nil {
-					return fmt.Errorf("failed to create component directory for %s: %w", componentName, err)
+				generatedPath := filepath.Join(componentPath, "generated")
+				customPath := filepath.Join(componentPath, "custom")
+
+				if err := os.MkdirAll(generatedPath, 0755); err != nil {
+					return fmt.Errorf("failed to create generated directory for %s: %w", componentName, err)
+				}
+
+				// Create root kustomization.yaml (only if it doesn't exist)
+				rootKustomizationPath := filepath.Join(componentPath, "kustomization.yaml")
+				if _, err := os.Stat(rootKustomizationPath); os.IsNotExist(err) {
+					if err := createRootKustomization(site, componentName, rootKustomizationPath); err != nil {
+						return fmt.Errorf("failed to create root kustomization for %s: %w", componentName, err)
+					}
+					renderedCount++
+				}
+
+				// Create custom/ directory with template (only if it doesn't exist)
+				customKustomizationPath := filepath.Join(customPath, "kustomization.yaml")
+				if _, err := os.Stat(customKustomizationPath); os.IsNotExist(err) {
+					if err := os.MkdirAll(customPath, 0755); err != nil {
+						return fmt.Errorf("failed to create custom directory for %s: %w", componentName, err)
+					}
+					if err := createCustomKustomizationTemplate(customKustomizationPath); err != nil {
+						return fmt.Errorf("failed to create custom kustomization template for %s: %w", componentName, err)
+					}
 				}
 
 				// Find all templates for this component
@@ -218,25 +347,27 @@ func newRenderCmd() *cobra.Command {
 					return fmt.Errorf("failed to find templates for component %s: %w", componentName, err)
 				}
 
+				// Render generated/kustomization.yaml
+				generatedKustomizationPath := filepath.Join(generatedPath, "kustomization.yaml")
+
 				// If no app specific templates found, use base template
 				if len(componentTemplates) == 0 {
 					templateName := "apps/base.kustomization.yaml.tmpl"
-					outputPath := filepath.Join(componentPath, "kustomization.yaml")
-					if err := RenderKustomizationTemplate(site, componentName, &component, templateName, outputPath); err != nil {
+					if err := RenderKustomizationTemplate(site, componentName, &component, templateName, generatedKustomizationPath); err != nil {
 						return fmt.Errorf("failed to render base template for component %s: %w", componentName, err)
 					}
 					renderedCount++
 					continue
 				}
 
-				// Render all app specific templates
+				// Render all app specific templates into generated/ directory
 				for _, templateName := range componentTemplates {
 					// Convert template name to output filename
 					// e.g., "apps/pihole/kustomization.yaml.tmpl" -> "kustomization.yaml"
 					// e.g., "apps/pihole/secret-patch.yaml.tmpl" -> "secret-patch.yaml"
 					baseName := filepath.Base(templateName)
 					outputFileName := strings.TrimSuffix(baseName, ".tmpl")
-					outputPath := filepath.Join(componentPath, outputFileName)
+					outputPath := filepath.Join(generatedPath, outputFileName)
 
 					if err := RenderTemplate(site, componentName, &component, templateName, outputPath); err != nil {
 						return fmt.Errorf("failed to render template %s for component %s: %w", templateName, componentName, err)
