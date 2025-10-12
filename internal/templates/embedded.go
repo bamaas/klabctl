@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-//go:embed apps/*.tmpl apps/*/*.tmpl
+//go:embed apps/*.tmpl apps/*/*.tmpl infra/*.tmpl
 var EmbeddedTemplates embed.FS
 
 // TemplateNames provides a map of template names to their embedded content

@@ -25,4 +25,5 @@ func Execute() {
 func init() {
 	rootCmd.PersistentFlags().StringVarP(&sitePath, "site", "s", "site.yaml", "Path to site.yaml")
 	rootCmd.AddCommand(newRenderCmd())
+	rootCmd.AddCommand(newProvisionInfraCmd())
 }

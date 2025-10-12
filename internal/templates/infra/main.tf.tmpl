@@ -1,0 +1,16 @@
+locals {
+  tfvars = jsondecode(file("${path.module}/terraform.tfvars.json"))
+}
+
+module "homelab_infra" {
+  source = "{{ .ModuleSource }}"
+
+  default_gateway   = local.tfvars.default_gateway
+  cluster_name      = local.tfvars.cluster_name
+  cluster_endpoint  = local.tfvars.cluster_endpoint
+  virtual_shared_ip = local.tfvars.virtual_shared_ip
+  cluster_domain    = local.tfvars.cluster_domain
+  talos_image       = local.tfvars.talos_image
+  node_data         = local.tfvars.node_data
+}
+

@@ -297,6 +297,22 @@ func newRenderCmd() *cobra.Command {
 				return err
 			}
 
+			// Generate infrastructure if configured
+			if site.Spec.Infra.Base.Source != "" {
+				fmt.Println("Generating infrastructure...")
+
+				terraformDir := filepath.Join("clusters", site.Metadata.Name, "infra", "generated")
+				if err := os.MkdirAll(terraformDir, 0755); err != nil {
+					return fmt.Errorf("create terraform dir: %w", err)
+				}
+
+				if err := generateTerraformRoot(terraformDir, site); err != nil {
+					return fmt.Errorf("generate terraform root: %w", err)
+				}
+
+				fmt.Printf("✓ Generated Terraform root in %s\n", terraformDir)
+			}
+
 			// Define path to components directory
 			appsPath := filepath.Join("clusters", site.Metadata.Name, "apps")
 
@@ -381,4 +397,71 @@ func newRenderCmd() *cobra.Command {
 		},
 	}
 	return cmd
+}
+
+// generateTerraformRoot generates Terraform root module files from site configuration
+func generateTerraformRoot(dir string, site *config.Site) error {
+	// Build module source from infra base config
+	moduleSource := fmt.Sprintf("git::%s//%s?ref=%s",
+		site.Spec.Infra.Base.Source,
+		site.Spec.Infra.Base.Path,
+		site.Spec.Infra.Base.Ref)
+
+	// Set default content type if not specified
+	contentType := site.Spec.Infra.TalosImage.ContentType
+	if contentType == "" {
+		contentType = "iso"
+	}
+
+	// Template data
+	data := struct {
+		ModuleSource          string
+		Site                  *config.Site
+		TalosImageContentType string
+	}{
+		ModuleSource:          moduleSource,
+		Site:                  site,
+		TalosImageContentType: contentType,
+	}
+
+	// Render main.tf
+	if err := renderInfraTemplate("infra/main.tf.tmpl", filepath.Join(dir, "main.tf"), data); err != nil {
+		return fmt.Errorf("render main.tf: %w", err)
+	}
+
+	// Render terraform.tfvars.json
+	if err := renderInfraTemplate("infra/terraform.tfvars.json.tmpl", filepath.Join(dir, "terraform.tfvars.json"), data); err != nil {
+		return fmt.Errorf("render terraform.tfvars.json: %w", err)
+	}
+
+	return nil
+}
+
+// renderInfraTemplate renders an infrastructure template to a file
+func renderInfraTemplate(templateName, outputPath string, data interface{}) error {
+	// Read template content
+	templateContent, err := templates.EmbeddedTemplates.ReadFile(templateName)
+	if err != nil {
+		return fmt.Errorf("read template %s: %w", templateName, err)
+	}
+
+	// Parse template
+	tmpl, err := template.New(filepath.Base(templateName)).Parse(string(templateContent))
+	if err != nil {
+		return fmt.Errorf("parse template %s: %w", templateName, err)
+	}
+
+	// Create output file
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("create output file %s: %w", outputPath, err)
+	}
+	defer outputFile.Close()
+
+	// Execute template
+	if err := tmpl.Execute(outputFile, data); err != nil {
+		return fmt.Errorf("execute template %s: %w", templateName, err)
+	}
+
+	return nil
 }

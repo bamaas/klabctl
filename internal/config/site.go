@@ -23,7 +23,58 @@ type Metadata struct {
 
 // Spec contains the main configuration specification
 type Spec struct {
-	Apps Apps `yaml:"apps"`
+	Infra Infra `yaml:"infra"`
+	Apps  Apps  `yaml:"apps"`
+}
+
+// Infra defines infrastructure configuration
+type Infra struct {
+	Base Base `yaml:"base"`
+
+	Provider struct {
+		Name    string `yaml:"name"`
+		Proxmox struct {
+			Endpoint string `yaml:"endpoint"`
+			TokenID  string `yaml:"tokenID"`
+		} `yaml:"proxmox"`
+	} `yaml:"provider"`
+
+	TalosImage struct {
+		URL         string `yaml:"url"`
+		FileName    string `yaml:"fileName"`
+		NodeName    string `yaml:"nodeName"`
+		DatastoreId string `yaml:"datastoreId"`
+		Overwrite   bool   `yaml:"overwrite"`
+		ContentType string `yaml:"contentType"`
+	} `yaml:"talosImage"`
+
+	NodeData struct {
+		ControlPlanes []NodeConfig `yaml:"controlPlanes"`
+		Workers       []NodeConfig `yaml:"workers"`
+	} `yaml:"nodeData"`
+
+	Cluster struct {
+		Name            string `yaml:"name"`
+		Endpoint        string `yaml:"endpoint"`
+		VirtualSharedIp string `yaml:"virtualSharedIp"`
+		Domain          string `yaml:"domain"`
+		DefaultGateway  string `yaml:"defaultGateway"`
+	} `yaml:"cluster"`
+}
+
+// NodeConfig defines configuration for a single node
+type NodeConfig struct {
+	IP            string `yaml:"ip" json:"ip"`
+	Hostname      string `yaml:"hostname" json:"hostname"`
+	PveNode       string `yaml:"pveNode" json:"pve_node"`
+	PveId         int    `yaml:"pveId" json:"pve_id"`
+	Memory        int    `yaml:"memory" json:"memory"`
+	Cores         int    `yaml:"cores" json:"cores"`
+	DiskSize      int    `yaml:"diskSize" json:"disk_size"`
+	InstallDisk   string `yaml:"installDisk,omitempty" json:"install_disk,omitempty"`
+	StartOnBoot   bool   `yaml:"startOnBoot,omitempty" json:"start_on_boot,omitempty"`
+	NetworkBridge string `yaml:"networkBridge,omitempty" json:"network_bridge,omitempty"`
+	DatastoreId   string `yaml:"datastoreId,omitempty" json:"datastore_id,omitempty"`
 }
 
 // Apps defines application configuration
