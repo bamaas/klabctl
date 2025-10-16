@@ -1,0 +1,41 @@
+# Default values for all components
+# These values are embedded in klabctl and provide sensible defaults
+# Users can override any value in their site.yaml
+
+apps:
+  catalog:
+    cilium:
+      enabled: false
+      values: {}
+
+    metallb:
+      enabled: false
+      values: {}
+
+    ingress-nginx:
+      enabled: false
+      values:
+        ip: ""
+
+    cert-manager:
+      enabled: false
+      values:
+        letsencrypt:
+          email: ""
+          staging: true
+        cloudflare:
+          apiToken: ""
+
+    external-dns:
+      enabled: false
+      values:
+        piholeTlsSkipVerify: false
+
+    pihole:
+      enabled: false
+      values:
+        host: ""
+        ip: ""
+        password: ""
+        webPassword: ""
+
