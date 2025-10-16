@@ -401,11 +401,8 @@ func newRenderCmd() *cobra.Command {
 
 // generateTerraformRoot generates Terraform root module files from site configuration
 func generateTerraformRoot(dir string, site *config.Site) error {
-	// Build module source from infra base config
-	moduleSource := fmt.Sprintf("git::%s//%s?ref=%s",
-		site.Spec.Infra.Base.Source,
-		site.Spec.Infra.Base.Path,
-		site.Spec.Infra.Base.Ref)
+	// Use local base/infra module
+	moduleSource := "../../../../base/infra"
 
 	// Set default content type if not specified
 	contentType := site.Spec.Infra.TalosImage.ContentType

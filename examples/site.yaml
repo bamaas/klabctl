@@ -7,8 +7,8 @@ spec:
   # Infrastructure provisioning configuration
   infra:
     base:
-      source: "https://github.com/example/homelab-infra"
-      ref: "v1.0.0"
+      source: "https://github.com/bamaas/HomeLab-2.0"
+      ref: "main"
       path: "provision/core"
     
     provider:
@@ -68,8 +68,8 @@ spec:
   # Application deployment configuration
   apps:
     base:
-      source: "https://github.com/example/homelab-apps"
-      ref: "v1.2.3"      # pin to a tag or commit SHA (avoid main)
+      source: "https://github.com/bamaas/HomeLab-2.0"
+      ref: "main"      # pin to a tag or commit SHA (avoid main)
       path: "apps/base"
 
     # Per-component overlays; each becomes its own Argo CD Application (for visibility)

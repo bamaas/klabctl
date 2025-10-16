@@ -1,0 +1,10 @@
+---
+apiVersion: builtin
+kind: HelmChartInflationGenerator
+metadata:
+  name: victoria-metrics-k8s-stack
+name: victoria-metrics-k8s-stack
+repo: https://victoriametrics.github.io/helm-charts/
+version: 0.58.2
+releaseName: victoria-metrics-k8s-stack
+valuesFile: values.yaml
