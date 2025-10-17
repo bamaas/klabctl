@@ -227,6 +227,35 @@ func createRootKustomization(site *config.Site, componentName, outputPath string
 	return nil
 }
 
+// validateBaseComponents checks if the required base components exist
+func validateBaseComponents(site *config.Site) error {
+	baseAppsPath := filepath.Join("base", "apps")
+
+	// Check if base/apps directory exists
+	if _, err := os.Stat(baseAppsPath); os.IsNotExist(err) {
+		return fmt.Errorf("base/apps directory does not exist. Run 'klabctl vendor' first")
+	}
+
+	// Check each enabled component
+	var missingComponents []string
+	for componentName, component := range site.Spec.Apps.Catalog {
+		if !component.Enabled {
+			continue
+		}
+
+		componentPath := filepath.Join(baseAppsPath, componentName)
+		if _, err := os.Stat(componentPath); os.IsNotExist(err) {
+			missingComponents = append(missingComponents, componentName)
+		}
+	}
+
+	if len(missingComponents) > 0 {
+		return fmt.Errorf("missing base components: %v. Run 'klabctl vendor' to sync base applications", missingComponents)
+	}
+
+	return nil
+}
+
 // createCustomKustomizationTemplate creates an empty custom kustomization.yaml template for users
 func createCustomKustomizationTemplate(outputPath string) error {
 	// Read header template first
@@ -288,12 +317,18 @@ func FindAppTemplates(componentName string) ([]string, error) {
 }
 
 func newRenderCmd() *cobra.Command {
+
 	cmd := &cobra.Command{
 		Use:   "render",
 		Short: "Render cluster GitOps skeleton from site.yaml",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			site, err := config.LoadSiteFromFile(sitePath)
 			if err != nil {
+				return err
+			}
+
+			// Validate base components exist before rendering
+			if err := validateBaseComponents(site); err != nil {
 				return err
 			}
 
@@ -396,6 +431,7 @@ func newRenderCmd() *cobra.Command {
 			return nil
 		},
 	}
+
 	return cmd
 }
 
