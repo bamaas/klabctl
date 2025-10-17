@@ -25,5 +25,5 @@ func init() {
 	rootCmd.AddCommand(newRenderCmd())
 	rootCmd.AddCommand(newProvisionInfraCmd())
 	rootCmd.AddCommand(newVendorCmd())
-	// rootCmd.AddCommand(newInitCmd())
+	rootCmd.AddCommand(newInitCmd())
 }
