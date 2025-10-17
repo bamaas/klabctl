@@ -1,6 +1,0 @@
----
-generators:
-  - helm-chart.yaml
-
-transformers:
-  - namespace-labels.yaml

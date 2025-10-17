@@ -1,6 +1,0 @@
----
-ingress:
-  enabled: false
-
-metrics:
-  enabled: true
