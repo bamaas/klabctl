@@ -1,0 +1,105 @@
+---
+apiVersion: klab/v1alpha1
+kind: Site
+metadata:
+  name: example-site
+
+spec:
+  # Infrastructure provisioning configuration
+  infra:
+    base:
+      source: "https://github.com/bamaas/HomeLab-2.0"
+      ref: "main"
+      path: "provision/core"
+    
+    provider:
+      name: proxmox
+      proxmox:
+        endpoint: "https://pve.example.local:8006/api2/json"
+        tokenID: "root@pam!terraform"
+        # tokenSecret via env: TF_VAR_proxmox_token_secret
+    
+    talosImage:
+      url: "https://factory.talos.dev/image/abc123def456/v1.10.3/nocloud-amd64.iso"
+      fileName: "talos-1.10.3-nocloud-amd64.iso"
+      nodeName: "pve"
+      datastoreId: "local"
+      overwrite: false
+      contentType: "iso"
+    
+    nodeData:
+      controlPlanes:
+        - ip: "192.168.1.10"
+          hostname: "k8s-cp-1"
+          pveNode: "pve"
+          pveId: 5000
+          memory: 8192
+          cores: 4
+          diskSize: 40
+        - ip: "192.168.1.11"
+          hostname: "k8s-cp-2"
+          pveNode: "pve"
+          pveId: 5001
+          memory: 8192
+          cores: 4
+          diskSize: 40
+      workers:
+        - ip: "192.168.1.20"
+          hostname: "k8s-w-1"
+          pveNode: "pve"
+          pveId: 6000
+          memory: 16384
+          cores: 8
+          diskSize: 100
+        - ip: "192.168.1.21"
+          hostname: "k8s-w-2"
+          pveNode: "pve"
+          pveId: 6001
+          memory: 16384
+          cores: 8
+          diskSize: 100
+    
+    cluster:
+      name: "example-cluster"
+      endpoint: "https://192.168.1.10:6443"
+      virtualSharedIp: "192.168.1.100"
+      domain: "cluster.example.local"
+      defaultGateway: "192.168.1.1"
+
+  # Application deployment configuration
+  apps:
+    base:
+      source: "https://github.com/bamaas/HomeLab-2.0"
+      ref: "main"      # pin to a tag or commit SHA (avoid main)
+      path: "apps/base"
+
+    # Per-component overlays; each becomes its own Argo CD Application (for visibility)
+    catalog:
+      cilium:
+        enabled: true
+
+      metallb:
+        enabled: true
+
+      ingress-nginx:
+        enabled: true
+        values:
+          ip: 192.168.1.150
+
+      cert-manager:
+        enabled: true
+        values:
+          letsencrypt:
+            email: admin@example.com
+          cloudflare:
+            apiToken: your-cloudflare-api-token-here
+
+      external-dns:
+        enabled: true
+
+      pihole:
+        enabled: true
+        values:
+          host: pihole.example.local
+          ip: 192.168.1.120
+          password: changeme
