@@ -58,7 +58,7 @@ func vendor(site *config.Site) error {
 		return fmt.Errorf("metadata.name is required")
 	}
 
-	// Vendor apps to clusters/{site}/apps/base/
+	// Vendor apps - each app gets its own base directory
 	if err := vendorApps(site); err != nil {
 		return err
 	}
@@ -84,31 +84,54 @@ func vendorApps(site *config.Site) error {
 		return fmt.Errorf("git clone apps failed: %w", err)
 	}
 
-	// Copy to clusters/{site}/apps/base/
-	sourcePath := filepath.Join(tempDir, site.Spec.Apps.Base.Path)
-	destPath := filepath.Join("clusters", site.Metadata.Name, "apps", "base")
-
-	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+	// Get the base apps path
+	baseAppsPath := filepath.Join(tempDir, site.Spec.Apps.Base.Path)
+	if _, err := os.Stat(baseAppsPath); os.IsNotExist(err) {
 		return fmt.Errorf("path '%s' does not exist in apps repository", site.Spec.Apps.Base.Path)
 	}
 
-	// Remove existing directory
-	if err := os.RemoveAll(destPath); err != nil {
-		return fmt.Errorf("failed to remove existing apps directory: %w", err)
+	// Vendor each enabled app to its own base directory
+	vendoredCount := 0
+	for appName, app := range site.Spec.Apps.Catalog {
+		if !app.Enabled {
+			continue
+		}
+
+		// Source: the app in the cloned base repository
+		appSourcePath := filepath.Join(baseAppsPath, appName)
+		if _, err := os.Stat(appSourcePath); os.IsNotExist(err) {
+			fmt.Printf("⚠ Warning: app '%s' not found in base repository, skipping\n", appName)
+			continue
+		}
+
+		// Destination: clusters/{site}/apps/{app}/base/
+		appDestPath := filepath.Join("clusters", site.Metadata.Name, "apps", appName, "base")
+
+		// Remove existing base directory
+		if err := os.RemoveAll(appDestPath); err != nil {
+			return fmt.Errorf("failed to remove existing base for %s: %w", appName, err)
+		}
+
+		// Copy app base
+		fmt.Printf("Vendoring %s to %s\n", appName, appDestPath)
+		if err := copyDir(appSourcePath, appDestPath); err != nil {
+			return fmt.Errorf("failed to copy %s: %w", appName, err)
+		}
+
+		// Modify helm-chart.yaml to add additionalValuesFiles
+		helmChartPath := filepath.Join(appDestPath, "helm-chart.yaml")
+		if _, err := os.Stat(helmChartPath); err == nil {
+			// Path to custom values: ../custom/values.yaml
+			customValuesPath := "../custom/values.yaml"
+			if err := addAdditionalValuesFile(helmChartPath, customValuesPath); err != nil {
+				return fmt.Errorf("failed to modify helm-chart.yaml for %s: %w", appName, err)
+			}
+		}
+
+		vendoredCount++
 	}
 
-	// Copy
-	fmt.Printf("Copying %s to %s\n", site.Spec.Apps.Base.Path, destPath)
-	if err := copyDir(sourcePath, destPath); err != nil {
-		return fmt.Errorf("failed to copy apps directory: %w", err)
-	}
-
-	// Modify helm-chart.yaml files to add additionalValuesFiles
-	if err := modifyHelmCharts(destPath); err != nil {
-		return fmt.Errorf("failed to modify helm-chart.yaml files: %w", err)
-	}
-
-	fmt.Printf("✓ Successfully vendored apps from %s@%s:%s\n", site.Spec.Apps.Base.Source, site.Spec.Apps.Base.Ref, site.Spec.Apps.Base.Path)
+	fmt.Printf("✓ Successfully vendored %d apps from %s@%s:%s\n", vendoredCount, site.Spec.Apps.Base.Source, site.Spec.Apps.Base.Ref, site.Spec.Apps.Base.Path)
 	return nil
 }
 
@@ -146,35 +169,6 @@ func vendorInfra(site *config.Site) error {
 
 	fmt.Printf("✓ Successfully vendored infra from %s@%s:%s\n", site.Spec.Infra.Base.Source, site.Spec.Infra.Base.Ref, site.Spec.Infra.Base.Path)
 	return nil
-}
-
-// modifyHelmCharts finds all helm-chart.yaml files and adds additionalValuesFiles
-func modifyHelmCharts(baseAppsDir string) error {
-	return filepath.Walk(baseAppsDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-
-		// Only process helm-chart.yaml files
-		if !info.IsDir() && info.Name() == "helm-chart.yaml" {
-			// Get the component name (parent directory)
-			componentDir := filepath.Dir(path)
-			componentName := filepath.Base(componentDir)
-
-			// Calculate relative path to custom values
-			// From: clusters/{site}/apps/base/cert-manager/helm-chart.yaml
-			// To:   clusters/{site}/apps/cert-manager/custom/values.yaml
-			// Path: ../../cert-manager/custom/values.yaml
-			customValuesPath := filepath.Join("../..", componentName, "custom", "values.yaml")
-
-			fmt.Printf("Modifying %s to add custom values overlay\n", path)
-			if err := addAdditionalValuesFile(path, customValuesPath); err != nil {
-				return fmt.Errorf("failed to modify %s: %w", path, err)
-			}
-		}
-
-		return nil
-	})
 }
 
 // addAdditionalValuesFile adds or appends to additionalValuesFiles in a helm-chart.yaml

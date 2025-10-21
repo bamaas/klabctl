@@ -229,28 +229,22 @@ func createRootKustomization(site *config.Site, componentName, outputPath string
 
 // validateBaseComponents checks if the required base components exist
 func validateBaseComponents(site *config.Site) error {
-	baseAppsPath := filepath.Join("base", "apps")
-
-	// Check if base/apps directory exists
-	if _, err := os.Stat(baseAppsPath); os.IsNotExist(err) {
-		return fmt.Errorf("base/apps directory does not exist. Run 'klabctl vendor' first")
-	}
-
-	// Check each enabled component
+	// Check each enabled component has its own base directory
 	var missingComponents []string
 	for componentName, component := range site.Spec.Apps.Catalog {
 		if !component.Enabled {
 			continue
 		}
 
-		componentPath := filepath.Join(baseAppsPath, componentName)
-		if _, err := os.Stat(componentPath); os.IsNotExist(err) {
+		// Check if clusters/{site}/apps/{component}/base exists
+		componentBasePath := filepath.Join("clusters", site.Metadata.Name, "apps", componentName, "base")
+		if _, err := os.Stat(componentBasePath); os.IsNotExist(err) {
 			missingComponents = append(missingComponents, componentName)
 		}
 	}
 
 	if len(missingComponents) > 0 {
-		return fmt.Errorf("missing base components: %v. Run 'klabctl vendor' to sync base applications", missingComponents)
+		return fmt.Errorf("missing base for components: %v. Run 'klabctl vendor' to sync base applications", missingComponents)
 	}
 
 	return nil
@@ -437,8 +431,8 @@ func newRenderCmd() *cobra.Command {
 
 // generateTerraformRoot generates Terraform root module files from site configuration
 func generateTerraformRoot(dir string, site *config.Site) error {
-	// Use local base/infra module
-	moduleSource := "../../../../base/infra"
+	// Use local infra/base module
+	moduleSource := "../../base"
 
 	// Set default content type if not specified
 	contentType := site.Spec.Infra.TalosImage.ContentType
