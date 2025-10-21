@@ -8,13 +8,14 @@ import (
 
 	"github.com/bamaas/klabctl/internal/config"
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func newVendorCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "vendor",
-		Short: "Vendor applications and infrastructure base",
-		Long:  "Vendors the applications and infrastructure base from the source repository to the base directory",
+		Short: "Vendor applications and infrastructure base to cluster-specific location",
+		Long:  "Vendors the applications and infrastructure base from the source repository to the cluster's base directory and modifies helm-chart.yaml files to support value overlays",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			site, err := config.LoadSiteFromFile(sitePath)
 			if err != nil {
@@ -27,7 +28,7 @@ func newVendorCmd() *cobra.Command {
 }
 
 func vendor(site *config.Site) error {
-	// Validate required fields for apps
+	// Validate required fields
 	if site.Spec.Apps.Base.Source == "" {
 		return fmt.Errorf("apps.base.source is required")
 	}
@@ -37,8 +38,6 @@ func vendor(site *config.Site) error {
 	if site.Spec.Apps.Base.Path == "" {
 		return fmt.Errorf("apps.base.path is required")
 	}
-
-	// Validate required fields for infra
 	if site.Spec.Infra.Base.Source == "" {
 		return fmt.Errorf("infra.base.source is required")
 	}
@@ -54,98 +53,206 @@ func vendor(site *config.Site) error {
 		return fmt.Errorf("git not found in PATH")
 	}
 
-	// Create a temporary directory for the clone
-	tempDir := filepath.Join(os.TempDir(), "klabctl-vendor-temp")
-	if err := os.RemoveAll(tempDir); err != nil {
-		return fmt.Errorf("failed to clean temp directory: %w", err)
+	// Validate site name
+	if site.Metadata.Name == "" {
+		return fmt.Errorf("metadata.name is required")
 	}
+
+	// Vendor apps to clusters/{site}/apps/base/
+	if err := vendorApps(site); err != nil {
+		return err
+	}
+
+	// Vendor infra to clusters/{site}/infra/base/
+	if err := vendorInfra(site); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func vendorApps(site *config.Site) error {
+	tempDir := filepath.Join(os.TempDir(), "klabctl-vendor-apps-temp")
 	defer os.RemoveAll(tempDir)
 
-	// Clone apps repository
-	appsSource := site.Spec.Apps.Base.Source
-	appsRef := site.Spec.Apps.Base.Ref
-	appsPath := site.Spec.Apps.Base.Path
-
-	fmt.Printf("Cloning apps repository: %s (ref: %s)\n", appsSource, appsRef)
-
-	cmdClone := exec.Command("git", "clone", "--depth", "1", "--branch", appsRef, appsSource, tempDir)
+	// Clone repository
+	fmt.Printf("Cloning apps repository: %s (ref: %s)\n", site.Spec.Apps.Base.Source, site.Spec.Apps.Base.Ref)
+	cmdClone := exec.Command("git", "clone", "--depth", "1", "--branch", site.Spec.Apps.Base.Ref, site.Spec.Apps.Base.Source, tempDir)
 	cmdClone.Stdout = os.Stdout
 	cmdClone.Stderr = os.Stderr
 	if err := cmdClone.Run(); err != nil {
-		return fmt.Errorf("git clone failed: %w", err)
+		return fmt.Errorf("git clone apps failed: %w", err)
 	}
 
-	// Move apps/base to base/apps
-	appsSourcePath := filepath.Join(tempDir, appsPath)
-	appsDestPath := filepath.Join("base", "apps")
+	// Copy to clusters/{site}/apps/base/
+	sourcePath := filepath.Join(tempDir, site.Spec.Apps.Base.Path)
+	destPath := filepath.Join("clusters", site.Metadata.Name, "apps", "base")
 
-	if _, err := os.Stat(appsSourcePath); os.IsNotExist(err) {
-		return fmt.Errorf("path '%s' does not exist in apps repository", appsPath)
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		return fmt.Errorf("path '%s' does not exist in apps repository", site.Spec.Apps.Base.Path)
 	}
 
-	// Remove existing base/apps directory if it exists
-	if _, err := os.Stat(appsDestPath); err == nil {
-		fmt.Printf("Removing existing directory: %s\n", appsDestPath)
-		if err := os.RemoveAll(appsDestPath); err != nil {
-			return fmt.Errorf("failed to remove existing apps directory: %w", err)
-		}
+	// Remove existing directory
+	if err := os.RemoveAll(destPath); err != nil {
+		return fmt.Errorf("failed to remove existing apps directory: %w", err)
 	}
 
-	// Create parent directory if needed
-	if err := os.MkdirAll(filepath.Dir(appsDestPath), 0755); err != nil {
-		return fmt.Errorf("failed to create base directory: %w", err)
-	}
-
-	fmt.Printf("Moving %s to %s\n", appsPath, appsDestPath)
-	if err := copyDir(appsSourcePath, appsDestPath); err != nil {
+	// Copy
+	fmt.Printf("Copying %s to %s\n", site.Spec.Apps.Base.Path, destPath)
+	if err := copyDir(sourcePath, destPath); err != nil {
 		return fmt.Errorf("failed to copy apps directory: %w", err)
 	}
 
-	fmt.Printf("✓ Successfully vendored apps from %s@%s:%s\n", appsSource, appsRef, appsPath)
-
-	// Handle infra (required)
-	infraSource := site.Spec.Infra.Base.Source
-	infraRef := site.Spec.Infra.Base.Ref
-	infraPath := site.Spec.Infra.Base.Path
-
-	// Clean temp directory for infra clone
-	if err := os.RemoveAll(tempDir); err != nil {
-		return fmt.Errorf("failed to clean temp directory: %w", err)
+	// Modify helm-chart.yaml files to add additionalValuesFiles
+	if err := modifyHelmCharts(destPath); err != nil {
+		return fmt.Errorf("failed to modify helm-chart.yaml files: %w", err)
 	}
 
-	fmt.Printf("Cloning infra repository: %s (ref: %s)\n", infraSource, infraRef)
+	fmt.Printf("✓ Successfully vendored apps from %s@%s:%s\n", site.Spec.Apps.Base.Source, site.Spec.Apps.Base.Ref, site.Spec.Apps.Base.Path)
+	return nil
+}
 
-	cmdCloneInfra := exec.Command("git", "clone", "--depth", "1", "--branch", infraRef, infraSource, tempDir)
-	cmdCloneInfra.Stdout = os.Stdout
-	cmdCloneInfra.Stderr = os.Stderr
-	if err := cmdCloneInfra.Run(); err != nil {
+func vendorInfra(site *config.Site) error {
+	tempDir := filepath.Join(os.TempDir(), "klabctl-vendor-infra-temp")
+	defer os.RemoveAll(tempDir)
+
+	// Clone repository
+	fmt.Printf("Cloning infra repository: %s (ref: %s)\n", site.Spec.Infra.Base.Source, site.Spec.Infra.Base.Ref)
+	cmdClone := exec.Command("git", "clone", "--depth", "1", "--branch", site.Spec.Infra.Base.Ref, site.Spec.Infra.Base.Source, tempDir)
+	cmdClone.Stdout = os.Stdout
+	cmdClone.Stderr = os.Stderr
+	if err := cmdClone.Run(); err != nil {
 		return fmt.Errorf("git clone infra failed: %w", err)
 	}
 
-	// Move provision/core to base/infra
-	infraSourcePath := filepath.Join(tempDir, infraPath)
-	infraDestPath := filepath.Join("base", "infra")
+	// Copy to clusters/{site}/infra/base/
+	sourcePath := filepath.Join(tempDir, site.Spec.Infra.Base.Path)
+	destPath := filepath.Join("clusters", site.Metadata.Name, "infra", "base")
 
-	if _, err := os.Stat(infraSourcePath); os.IsNotExist(err) {
-		return fmt.Errorf("path '%s' does not exist in infra repository", infraPath)
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		return fmt.Errorf("path '%s' does not exist in infra repository", site.Spec.Infra.Base.Path)
 	}
 
-	// Remove existing base/infra directory if it exists
-	if _, err := os.Stat(infraDestPath); err == nil {
-		fmt.Printf("Removing existing directory: %s\n", infraDestPath)
-		if err := os.RemoveAll(infraDestPath); err != nil {
-			return fmt.Errorf("failed to remove existing infra directory: %w", err)
-		}
+	// Remove existing directory
+	if err := os.RemoveAll(destPath); err != nil {
+		return fmt.Errorf("failed to remove existing infra directory: %w", err)
 	}
 
-	fmt.Printf("Moving %s to %s\n", infraPath, infraDestPath)
-	if err := copyDir(infraSourcePath, infraDestPath); err != nil {
+	// Copy
+	fmt.Printf("Copying %s to %s\n", site.Spec.Infra.Base.Path, destPath)
+	if err := copyDir(sourcePath, destPath); err != nil {
 		return fmt.Errorf("failed to copy infra directory: %w", err)
 	}
 
-	fmt.Printf("✓ Successfully vendored infra from %s@%s:%s\n", infraSource, infraRef, infraPath)
-
+	fmt.Printf("✓ Successfully vendored infra from %s@%s:%s\n", site.Spec.Infra.Base.Source, site.Spec.Infra.Base.Ref, site.Spec.Infra.Base.Path)
 	return nil
+}
+
+// modifyHelmCharts finds all helm-chart.yaml files and adds additionalValuesFiles
+func modifyHelmCharts(baseAppsDir string) error {
+	return filepath.Walk(baseAppsDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		// Only process helm-chart.yaml files
+		if !info.IsDir() && info.Name() == "helm-chart.yaml" {
+			// Get the component name (parent directory)
+			componentDir := filepath.Dir(path)
+			componentName := filepath.Base(componentDir)
+
+			// Calculate relative path to custom values
+			// From: clusters/{site}/apps/base/cert-manager/helm-chart.yaml
+			// To:   clusters/{site}/apps/cert-manager/custom/values.yaml
+			// Path: ../../cert-manager/custom/values.yaml
+			customValuesPath := filepath.Join("../..", componentName, "custom", "values.yaml")
+
+			fmt.Printf("Modifying %s to add custom values overlay\n", path)
+			if err := addAdditionalValuesFile(path, customValuesPath); err != nil {
+				return fmt.Errorf("failed to modify %s: %w", path, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// addAdditionalValuesFile adds or appends to additionalValuesFiles in a helm-chart.yaml
+func addAdditionalValuesFile(helmChartPath, customValuesPath string) error {
+	// Read and parse the YAML file
+	data, err := os.ReadFile(helmChartPath)
+	if err != nil {
+		return err
+	}
+
+	var node yaml.Node
+	if err := yaml.Unmarshal(data, &node); err != nil {
+		return err
+	}
+
+	// The root node is a Document node, we need the actual map content
+	if len(node.Content) == 0 {
+		return fmt.Errorf("empty YAML document")
+	}
+
+	rootMap := node.Content[0]
+	if rootMap.Kind != yaml.MappingNode {
+		return fmt.Errorf("expected YAML mapping node")
+	}
+
+	// Find additionalValuesFiles key
+	var additionalValuesIndex = -1
+	for i := 0; i < len(rootMap.Content); i += 2 {
+		keyNode := rootMap.Content[i]
+		if keyNode.Value == "additionalValuesFiles" {
+			additionalValuesIndex = i
+			break
+		}
+	}
+
+	// Check if the custom values path already exists
+	if additionalValuesIndex != -1 {
+		valuesNode := rootMap.Content[additionalValuesIndex+1]
+		if valuesNode.Kind == yaml.SequenceNode {
+			for _, item := range valuesNode.Content {
+				if item.Value == customValuesPath {
+					// Already exists, skip
+					return nil
+				}
+			}
+			// Append to existing array
+			newItem := &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Value: customValuesPath,
+			}
+			valuesNode.Content = append(valuesNode.Content, newItem)
+		}
+	} else {
+		// Create new additionalValuesFiles at the end
+		keyNode := &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Value: "additionalValuesFiles",
+		}
+		valueNode := &yaml.Node{
+			Kind: yaml.SequenceNode,
+			Content: []*yaml.Node{
+				{
+					Kind:  yaml.ScalarNode,
+					Value: customValuesPath,
+				},
+			},
+		}
+		rootMap.Content = append(rootMap.Content, keyNode, valueNode)
+	}
+
+	// Marshal back to YAML
+	output, err := yaml.Marshal(&node)
+	if err != nil {
+		return err
+	}
+
+	// Write back to file
+	return os.WriteFile(helmChartPath, output, 0644)
 }
 
 // copyDir recursively copies a directory
