@@ -288,6 +288,31 @@ func createCustomKustomizationTemplate(outputPath string) error {
 	return nil
 }
 
+func createCustomValuesTemplate(outputPath string) error {
+	// Read custom values template
+	templateContent, err := templates.EmbeddedTemplates.ReadFile("apps/custom.values.yaml.tmpl")
+	if err != nil {
+		return fmt.Errorf("failed to read custom values template: %w", err)
+	}
+
+	tmpl, err := template.New("custom-values").Parse(string(templateContent))
+	if err != nil {
+		return fmt.Errorf("failed to parse custom values template: %w", err)
+	}
+
+	outputFile, err := os.Create(outputPath)
+	if err != nil {
+		return fmt.Errorf("failed to create custom values file: %w", err)
+	}
+	defer outputFile.Close()
+
+	if err := tmpl.ExecuteTemplate(outputFile, "custom-values", nil); err != nil {
+		return fmt.Errorf("failed to execute custom values template: %w", err)
+	}
+
+	return nil
+}
+
 // FindComponentTemplates finds all templates for a specific component
 func FindAppTemplates(componentName string) ([]string, error) {
 	var componentTemplates []string
@@ -375,12 +400,22 @@ func newRenderCmd() *cobra.Command {
 					renderedCount++
 				}
 
-				// Create custom/ directory with template (only if it doesn't exist)
+				// create custom/ directory if it doesn't exist
+				if err := os.MkdirAll(customPath, 0755); err != nil {
+					return fmt.Errorf("failed to create custom directory for %s: %w", componentName, err)
+				}
+
+				// create custom/values.yaml if it doesn't exist
+				customValuesPath := filepath.Join(customPath, "values.yaml")
+				if _, err := os.Stat(customValuesPath); os.IsNotExist(err) {
+					if err := createCustomValuesTemplate(customValuesPath); err != nil {
+						return fmt.Errorf("failed to create custom values template for %s: %w", componentName, err)
+					}
+				}
+
+				// Create custom kustomization.yaml if it doesn't exist
 				customKustomizationPath := filepath.Join(customPath, "kustomization.yaml")
 				if _, err := os.Stat(customKustomizationPath); os.IsNotExist(err) {
-					if err := os.MkdirAll(customPath, 0755); err != nil {
-						return fmt.Errorf("failed to create custom directory for %s: %w", componentName, err)
-					}
 					if err := createCustomKustomizationTemplate(customKustomizationPath); err != nil {
 						return fmt.Errorf("failed to create custom kustomization template for %s: %w", componentName, err)
 					}
