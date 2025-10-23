@@ -1,0 +1,18 @@
+---
+componentName: cert-manager
+schemaVersion: v1
+
+values:
+  letsencrypt.email:
+    type: string
+    required: true
+    format: email
+    description: "Email for Let's Encrypt notifications"
+    example: "admin@example.com"
+  
+  cloudflare.apiToken:
+    type: string
+    required: true
+    description: "Cloudflare API token for DNS-01 challenges"
+    example: "your-cloudflare-api-token-here"
+

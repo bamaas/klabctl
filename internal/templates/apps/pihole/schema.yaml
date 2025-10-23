@@ -1,0 +1,25 @@
+---
+componentName: pihole
+schemaVersion: v1
+
+values:
+  host:
+    type: string
+    required: true
+    format: hostname
+    description: "Hostname for PiHole ingress"
+    example: "pihole.example.local"
+  
+  ip:
+    type: string
+    required: true
+    format: ipv4
+    description: "LoadBalancer IP for PiHole DNS service"
+    example: "192.168.1.120"
+  
+  password:
+    type: string
+    required: false
+    default: "changeme"
+    description: "Web interface password"
+

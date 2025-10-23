@@ -346,6 +346,12 @@ func newRenderCmd() *cobra.Command {
 				return err
 			}
 
+			// Validate site.yaml against component schemas
+			fmt.Println("Validating site configuration...")
+			if err := validateSiteAgainstSchemas(site); err != nil {
+				return err
+			}
+
 			// Validate base components exist before rendering
 			if err := validateBaseComponents(site); err != nil {
 				return err
