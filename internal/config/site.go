@@ -23,8 +23,15 @@ type Metadata struct {
 
 // Spec contains the main configuration specification
 type Spec struct {
+	Stack Stack `yaml:"stack,omitempty"`
 	Infra Infra `yaml:"infra"`
 	Apps  Apps  `yaml:"apps"`
+}
+
+// Stack defines the stack source configuration
+type Stack struct {
+	Source  string `yaml:"source"`
+	Version string `yaml:"version"`
 }
 
 // Infra defines infrastructure configuration
