@@ -1,0 +1,10 @@
+---
+apiVersion: metallb.io/v1beta1
+kind: IPAddressPool
+metadata:
+  name: pihole-address-pool
+spec:
+  addresses:
+    - {{ .AllComponents.pihole.Values.ip }}/32
+  autoAssign: true
+  avoidBuggyIPs: false

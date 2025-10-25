@@ -1,0 +1,7 @@
+{{- define "base" -}}
+{{- template "kustomization-header" . }}
+
+resources:
+  - ../base
+{{- block "additional-resources" . }}{{- end }}
+{{- end -}}
