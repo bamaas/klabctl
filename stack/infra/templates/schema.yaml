@@ -1,0 +1,120 @@
+---
+# Schema for infrastructure configuration
+componentName: infra
+version: v1
+description: Infrastructure provisioning configuration for Kubernetes clusters
+
+values:
+  provider.name:
+    type: string
+    required: true
+    description: Infrastructure provider name (e.g., proxmox, aws, gcp)
+    example: "proxmox"
+  
+  provider.proxmox.endpoint:
+    type: string
+    required: false
+    description: Proxmox API endpoint URL
+    example: "https://pve.example.local:8006/api2/json"
+  
+  provider.proxmox.tokenID:
+    type: string
+    required: false
+    description: Proxmox API token ID
+    example: "root@pam!terraform"
+  
+  talosImage.url:
+    type: string
+    required: true
+    description: URL to Talos Linux image
+    example: "https://factory.talos.dev/image/abc123def456/v1.10.3/nocloud-amd64.iso"
+  
+  talosImage.fileName:
+    type: string
+    required: true
+    description: Filename for the Talos image
+    example: "talos-1.10.3-nocloud-amd64.iso"
+  
+  talosImage.nodeName:
+    type: string
+    required: true
+    description: Proxmox node name where image will be stored
+    example: "pve"
+  
+  talosImage.datastoreId:
+    type: string
+    required: true
+    description: Proxmox datastore ID for the image
+    example: "local"
+  
+  talosImage.overwrite:
+    type: boolean
+    required: false
+    description: Whether to overwrite existing image
+    example: false
+  
+  talosImage.contentType:
+    type: string
+    required: false
+    description: Content type of the image (iso, img, etc)
+    example: "iso"
+  
+  cluster.name:
+    type: string
+    required: true
+    description: Kubernetes cluster name
+    example: "my-cluster"
+  
+  cluster.endpoint:
+    type: string
+    required: true
+    description: Kubernetes API endpoint URL
+    example: "https://192.168.1.10:6443"
+  
+  cluster.virtualSharedIp:
+    type: string
+    required: true
+    format: ipv4
+    description: Virtual IP shared across control plane nodes
+    example: "192.168.1.100"
+  
+  cluster.domain:
+    type: string
+    required: true
+    format: hostname
+    description: Cluster domain name
+    example: "cluster.example.local"
+  
+  cluster.defaultGateway:
+    type: string
+    required: true
+    format: ipv4
+    description: Default gateway for the cluster network
+    example: "192.168.1.1"
+  
+  nodeData.controlPlanes:
+    type: array
+    required: true
+    description: List of control plane node configurations
+    example:
+      - ip: "192.168.1.10"
+        hostname: "k8s-cp-1"
+        pveNode: "pve"
+        pveId: 5000
+        memory: 8192
+        cores: 4
+        diskSize: 40
+  
+  nodeData.workers:
+    type: array
+    required: false
+    description: List of worker node configurations
+    example:
+      - ip: "192.168.1.20"
+        hostname: "k8s-w-1"
+        pveNode: "pve"
+        pveId: 6000
+        memory: 16384
+        cores: 8
+        diskSize: 100
+
