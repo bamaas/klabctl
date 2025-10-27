@@ -140,95 +140,85 @@ func createGitignore(outputPath string) error {
 	return nil
 }
 
+// loadInfraDefaults loads the default infra values from the stack cache
+func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
+	valuesPath := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "infra", "templates", "values.yaml")
+	
+	// Read the values file
+	data, err := os.ReadFile(valuesPath)
+	if err != nil {
+		// If values file doesn't exist, return empty map (backward compatibility)
+		return make(map[string]interface{}), nil
+	}
+	
+	// Parse YAML
+	var values map[string]interface{}
+	if err := yaml.Unmarshal(data, &values); err != nil {
+		return nil, fmt.Errorf("failed to parse infra values: %w", err)
+	}
+	
+	return values, nil
+}
+
 // generateSiteYaml creates a basic site.yaml file
 func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string) error {
+	// Load infra defaults from stack
+	infraDefaults, err := loadInfraDefaults(stackVersion)
+	if err != nil {
+		return fmt.Errorf("failed to load infra defaults: %w", err)
+	}
+	
+	// Override cluster name in defaults
+	if cluster, ok := infraDefaults["cluster"].(map[string]interface{}); ok {
+		cluster["name"] = clusterName
+	}
+	// Build spec with loaded infra defaults
+	spec := map[string]interface{}{
+		"stack": map[string]string{
+			"source":  stackSource,
+			"version": stackVersion,
+		},
+		"apps": map[string]interface{}{
+			"catalog": map[string]interface{}{
+				"cilium": map[string]interface{}{
+					"enabled": true,
+				},
+				"metallb": map[string]interface{}{
+					"enabled": true,
+				},
+				"ingress-nginx": map[string]interface{}{
+					"enabled": true,
+					"values": map[string]interface{}{
+						"ip": "192.168.1.150",
+					},
+				},
+				"cert-manager": map[string]interface{}{
+					"enabled": false,
+					"values": map[string]interface{}{
+						"letsencrypt": map[string]interface{}{
+							"email": "admin@example.com",
+						},
+						"cloudflare": map[string]interface{}{
+							"apiToken": "your-cloudflare-api-token-here",
+						},
+					},
+				},
+			},
+		},
+	}
+	
+	// Add infra section if defaults were loaded
+	if len(infraDefaults) > 0 {
+		spec["infra"] = infraDefaults
+	}
+	
 	site := map[string]interface{}{
 		"apiVersion": "klab/v1alpha1",
 		"kind":       "Site",
 		"metadata": map[string]string{
 			"name": clusterName,
 		},
-		"spec": map[string]interface{}{
-			"stack": map[string]string{
-				"source":  stackSource,
-				"version": stackVersion,
-			},
-			"infra": map[string]interface{}{
-				"provider": map[string]interface{}{
-					"name": "proxmox",
-					"proxmox": map[string]interface{}{
-						"endpoint": "https://pve.example.local:8006/api2/json",
-						"tokenID":  "root@pam!terraform",
-					},
-				},
-				"talosImage": map[string]interface{}{
-					"url":         "https://factory.talos.dev/image/abc123def456/v1.10.3/nocloud-amd64.iso",
-					"fileName":    "talos-1.10.3-nocloud-amd64.iso",
-					"nodeName":    "pve",
-					"datastoreId": "local",
-					"overwrite":   false,
-					"contentType": "iso",
-				},
-				"nodeData": map[string]interface{}{
-					"controlPlanes": []map[string]interface{}{
-						{
-							"ip":       "192.168.1.10",
-							"hostname": "k8s-cp-1",
-							"pveNode":  "pve",
-							"pveId":    5000,
-							"memory":   8192,
-							"cores":    4,
-							"diskSize": 40,
-						},
-					},
-					"workers": []map[string]interface{}{
-						{
-							"ip":       "192.168.1.20",
-							"hostname": "k8s-w-1",
-							"pveNode":  "pve",
-							"pveId":    6000,
-							"memory":   16384,
-							"cores":    8,
-							"diskSize": 100,
-						},
-					},
-				},
-				"cluster": map[string]interface{}{
-					"name":            clusterName,
-					"endpoint":        "https://192.168.1.10:6443",
-					"virtualSharedIp": "192.168.1.100",
-					"domain":          "cluster.local",
-					"defaultGateway":  "192.168.1.1",
-				},
-			},
-			"apps": map[string]interface{}{
-				"catalog": map[string]interface{}{
-					"cilium": map[string]interface{}{
-						"enabled": true,
-					},
-					"metallb": map[string]interface{}{
-						"enabled": true,
-					},
-					"ingress-nginx": map[string]interface{}{
-						"enabled": true,
-						"values": map[string]interface{}{
-							"ip": "192.168.1.150",
-						},
-					},
-					"cert-manager": map[string]interface{}{
-						"enabled": false,
-						"values": map[string]interface{}{
-							"letsencrypt": map[string]interface{}{
-								"email": "admin@example.com",
-							},
-							"cloudflare": map[string]interface{}{
-								"apiToken": "your-cloudflare-api-token-here",
-							},
-						},
-					},
-				},
-			},
-		},
+		"spec": spec,
 	}
 
 	data, err := yaml.Marshal(site)
