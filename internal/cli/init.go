@@ -153,6 +153,54 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 				"source":  stackSource,
 				"version": stackVersion,
 			},
+			"infra": map[string]interface{}{
+				"provider": map[string]interface{}{
+					"name": "proxmox",
+					"proxmox": map[string]interface{}{
+						"endpoint": "https://pve.example.local:8006/api2/json",
+						"tokenID":  "root@pam!terraform",
+					},
+				},
+				"talosImage": map[string]interface{}{
+					"url":         "https://factory.talos.dev/image/abc123def456/v1.10.3/nocloud-amd64.iso",
+					"fileName":    "talos-1.10.3-nocloud-amd64.iso",
+					"nodeName":    "pve",
+					"datastoreId": "local",
+					"overwrite":   false,
+					"contentType": "iso",
+				},
+				"nodeData": map[string]interface{}{
+					"controlPlanes": []map[string]interface{}{
+						{
+							"ip":       "192.168.1.10",
+							"hostname": "k8s-cp-1",
+							"pveNode":  "pve",
+							"pveId":    5000,
+							"memory":   8192,
+							"cores":    4,
+							"diskSize": 40,
+						},
+					},
+					"workers": []map[string]interface{}{
+						{
+							"ip":       "192.168.1.20",
+							"hostname": "k8s-w-1",
+							"pveNode":  "pve",
+							"pveId":    6000,
+							"memory":   16384,
+							"cores":    8,
+							"diskSize": 100,
+						},
+					},
+				},
+				"cluster": map[string]interface{}{
+					"name":            clusterName,
+					"endpoint":        "https://192.168.1.10:6443",
+					"virtualSharedIp": "192.168.1.100",
+					"domain":          "cluster.local",
+					"defaultGateway":  "192.168.1.1",
+				},
+			},
 			"apps": map[string]interface{}{
 				"catalog": map[string]interface{}{
 					"cilium": map[string]interface{}{

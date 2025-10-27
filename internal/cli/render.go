@@ -378,8 +378,8 @@ func newRenderCmd() *cobra.Command {
 				return err
 			}
 
-			// Generate infrastructure if configured
-			if site.Spec.Infra.Base.Source != "" {
+			// Generate infrastructure if configured (check if provider is set)
+			if site.Spec.Infra.Provider.Name != "" {
 				fmt.Println("Generating infrastructure...")
 
 				// Copy infra base from cache
