@@ -65,7 +65,7 @@ func initProject(clusterName string) error {
 
 	// Generate site.yaml in cluster directory
 	fmt.Println("📝 Generating site.yaml...")
-	if err := generateSiteYaml(siteYamlPath, clusterName, stackSource, stackVersion); err != nil {
+	if _, err := generateSiteYaml(siteYamlPath, clusterName, stackSource, stackVersion); err != nil {
 		return fmt.Errorf("failed to generate site.yaml: %w", err)
 	}
 
@@ -207,11 +207,11 @@ func discoverAppsWithDefaults(stackVersion string) ([]string, error) {
 }
 
 // generateSiteYaml creates a basic site.yaml file
-func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string) error {
+func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string) (string, error) {
 	// Load infra defaults
 	infraDefaults, err := loadInfraDefaults(stackVersion)
 	if err != nil {
-		return fmt.Errorf("failed to load infra defaults: %w", err)
+		return "", fmt.Errorf("failed to load infra defaults: %w", err)
 	}
 
 	// Override cluster name
@@ -222,7 +222,7 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 	// Discover all apps
 	discoveredApps, err := discoverAppsWithDefaults(stackVersion)
 	if err != nil {
-		return fmt.Errorf("failed to discover apps: %w", err)
+		return "", fmt.Errorf("failed to discover apps: %w", err)
 	}
 
 	// Build app catalog - all apps enabled by default
@@ -230,7 +230,7 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 	for _, appName := range discoveredApps {
 		appDefaults, err := loadAppDefaults(stackVersion, appName)
 		if err != nil {
-			return fmt.Errorf("failed to load defaults for %s: %w", appName, err)
+			return "", fmt.Errorf("failed to load defaults for %s: %w", appName, err)
 		}
 
 		appConfig := map[string]interface{}{
@@ -267,12 +267,17 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 
 	data, err := yaml.Marshal(site)
 	if err != nil {
-		return fmt.Errorf("failed to marshal site.yaml: %w", err)
+		return "", fmt.Errorf("failed to marshal site.yaml: %w", err)
+	}
+
+	// If outputPath is empty return the data as a string
+	if outputPath == "" {
+		return string(data), nil
 	}
 
 	if err := os.WriteFile(outputPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write site.yaml: %w", err)
+		return "", fmt.Errorf("failed to write site.yaml: %w", err)
 	}
 
-	return nil
+	return "", nil
 }
