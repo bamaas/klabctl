@@ -1,0 +1,288 @@
+package cli
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
+	"github.com/bamaas/klabctl/internal/config"
+	"github.com/spf13/cobra"
+)
+
+var pullForce bool
+
+func newPullCmd() *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "pull",
+		Short: "Pull and validate stack cache",
+		Long:  "Ensures the stack is cached and valid, pulling or repairing as needed",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			// Load site.yaml to get stack info
+			site, err := config.LoadSiteFromFile(sitePath)
+			if err != nil {
+				return fmt.Errorf("failed to load site.yaml: %w", err)
+			}
+
+			if site.Spec.Stack.Source == "" || site.Spec.Stack.Version == "" {
+				return fmt.Errorf("stack.source and stack.version are required in site.yaml")
+			}
+
+			// Determine cache directory
+			stackCacheDir := filepath.Join(".klabctl", "cache", "stack", site.Spec.Stack.Version)
+
+			// Pull and validate
+			if pullForce {
+				fmt.Println("🔄 Force re-pulling stack...")
+				if err := os.RemoveAll(stackCacheDir); err != nil {
+					fmt.Printf("Warning: failed to remove cache: %v\n", err)
+				}
+			}
+
+			return EnsureStackAvailable(site.Spec.Stack.Source, site.Spec.Stack.Version, stackCacheDir)
+		},
+	}
+
+	cmd.Flags().BoolVar(&pullForce, "force", false, "Force re-pull stack even if cached")
+
+	return cmd
+}
+
+// isGitRepo checks if a directory is a git repository
+func isGitRepo(dir string) bool {
+	gitDir := filepath.Join(dir, ".git")
+	if _, err := os.Stat(gitDir); err == nil {
+		return true
+	}
+	return false
+}
+
+// getCachedVersion returns the current git version (branch/tag/commit) of the cache
+func getCachedVersion(stackDir string) (string, error) {
+	if !isGitRepo(stackDir) {
+		return "", fmt.Errorf("not a git repository")
+	}
+
+	// Get current branch or tag
+	cmd := exec.Command("git", "-C", stackDir, "rev-parse", "--abbrev-ref", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get git branch: %w", err)
+	}
+
+	branch := strings.TrimSpace(string(output))
+
+	// If detached HEAD, get commit SHA
+	if branch == "HEAD" {
+		cmd = exec.Command("git", "-C", stackDir, "rev-parse", "--short", "HEAD")
+		output, err = cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("failed to get git commit: %w", err)
+		}
+		return strings.TrimSpace(string(output)), nil
+	}
+
+	return branch, nil
+}
+
+// isValidCache validates the cache integrity using git
+func isValidCache(stackDir string) bool {
+	if !isGitRepo(stackDir) {
+		return false
+	}
+
+	// Check git status - are files modified/missing?
+	cmd := exec.Command("git", "-C", stackDir, "status", "--porcelain")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	// If output is not empty, working tree has modifications
+	if len(strings.TrimSpace(string(output))) > 0 {
+		return false
+	}
+
+	// Check required stack directories exist
+	requiredPaths := []string{
+		filepath.Join(stackDir, "stack"),
+		filepath.Join(stackDir, "stack/apps"),
+		filepath.Join(stackDir, "stack/templates"),
+	}
+
+	for _, path := range requiredPaths {
+		if _, err := os.Stat(path); os.IsNotExist(err) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// repairCache attempts to repair a corrupted cache using git
+func repairCache(stackDir string) error {
+	if !isGitRepo(stackDir) {
+		return fmt.Errorf("not a git repository")
+	}
+
+	fmt.Println("🔧 Repairing cache...")
+
+	// Reset to clean state
+	cmd := exec.Command("git", "-C", stackDir, "reset", "--hard", "HEAD")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git reset failed: %w", err)
+	}
+
+	// Clean untracked files
+	cmd = exec.Command("git", "-C", stackDir, "clean", "-fd")
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git clean failed: %w", err)
+	}
+
+	fmt.Println("✓ Cache repaired")
+	return nil
+}
+
+// updateGitRepo updates an existing git repository to a specific version
+func updateGitRepo(dir, version string) error {
+	// Fetch latest
+	fmt.Println("Fetching updates...")
+	cmd := exec.Command("git", "-C", dir, "fetch", "origin")
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git fetch failed: %w", err)
+	}
+
+	// Checkout requested version
+	cmd = exec.Command("git", "-C", dir, "checkout", version)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git checkout failed: %w", err)
+	}
+
+	// Pull if it's a branch (ignore errors if it's a tag/commit)
+	cmd = exec.Command("git", "-C", dir, "pull", "--ff-only")
+	cmd.Run()
+
+	return nil
+}
+
+// pullStack clones the stack repository to the cache directory
+func pullStack(source, version, destDir string) error {
+	// Check if git is available
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git not found in PATH")
+	}
+
+	// Remove existing directory if it exists
+	if err := os.RemoveAll(destDir); err != nil {
+		return fmt.Errorf("failed to remove existing cache: %w", err)
+	}
+
+	// Create parent directory
+	if err := os.MkdirAll(filepath.Dir(destDir), 0755); err != nil {
+		return fmt.Errorf("failed to create cache directory: %w", err)
+	}
+
+	// Clone repository
+	cmd := exec.Command("git", "clone", "--depth", "1", "--branch", version, source, destDir)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git clone failed: %w", err)
+	}
+
+	// Keep .git directory for cache validation and updates
+
+	return nil
+}
+
+// EnsureStackAvailable ensures the stack is cached and valid, pulling/repairing as needed
+// This is the main function that implements the "always validate" strategy
+func EnsureStackAvailable(source, version, stackDir string) error {
+	// Check if directory exists
+	if _, err := os.Stat(stackDir); os.IsNotExist(err) {
+		// Cache doesn't exist - clone it
+		fmt.Printf("📦 Pulling stack %s@%s...\n", source, version)
+		if err := pullStack(source, version, stackDir); err != nil {
+			return fmt.Errorf("failed to pull stack: %w", err)
+		}
+		fmt.Println("✓ Stack pulled successfully")
+		return nil
+	}
+
+	// Cache exists - validate it
+	if !isGitRepo(stackDir) {
+		// Not a git repo (corrupted) - remove and re-clone
+		fmt.Println("⚠ Cache is not a git repository, re-pulling...")
+		if err := os.RemoveAll(stackDir); err != nil {
+			return fmt.Errorf("failed to remove invalid cache: %w", err)
+		}
+		return EnsureStackAvailable(source, version, stackDir)
+	}
+
+	// Check current version
+	currentVersion, err := getCachedVersion(stackDir)
+	if err != nil {
+		// Can't determine version (corrupted) - re-clone
+		fmt.Printf("⚠ Cannot determine cache version: %v\n", err)
+		fmt.Println("⚠ Re-pulling stack...")
+		if err := os.RemoveAll(stackDir); err != nil {
+			return fmt.Errorf("failed to remove invalid cache: %w", err)
+		}
+		return EnsureStackAvailable(source, version, stackDir)
+	}
+
+	// Already on correct version?
+	if currentVersion == version {
+		// Validate integrity
+		if !isValidCache(stackDir) {
+			fmt.Println("⚠ Cache is corrupted or has modifications")
+			// Try to repair
+			if err := repairCache(stackDir); err != nil {
+				// Repair failed - re-clone
+				fmt.Printf("⚠ Repair failed: %v\n", err)
+				fmt.Println("⚠ Re-pulling stack...")
+				if err := os.RemoveAll(stackDir); err != nil {
+					return fmt.Errorf("failed to remove invalid cache: %w", err)
+				}
+				return EnsureStackAvailable(source, version, stackDir)
+			}
+		}
+
+		fmt.Printf("✓ Using cached stack %s\n", version)
+		return nil
+	}
+
+	// Different version - switch to requested version
+	fmt.Printf("🔄 Switching cache from %s to %s...\n", currentVersion, version)
+	if err := updateGitRepo(stackDir, version); err != nil {
+		// Update failed - re-clone
+		fmt.Printf("⚠ Version switch failed: %v\n", err)
+		fmt.Println("⚠ Re-pulling stack...")
+		if err := os.RemoveAll(stackDir); err != nil {
+			return fmt.Errorf("failed to remove invalid cache: %w", err)
+		}
+		return EnsureStackAvailable(source, version, stackDir)
+	}
+
+	// Validate after switching
+	if !isValidCache(stackDir) {
+		fmt.Println("⚠ Cache invalid after version switch")
+		if err := repairCache(stackDir); err != nil {
+			fmt.Printf("⚠ Repair failed: %v\n", err)
+			fmt.Println("⚠ Re-pulling stack...")
+			if err := os.RemoveAll(stackDir); err != nil {
+				return fmt.Errorf("failed to remove invalid cache: %w", err)
+			}
+			return EnsureStackAvailable(source, version, stackDir)
+		}
+	}
+
+	fmt.Println("✓ Cache switched and validated")
+	return nil
+}

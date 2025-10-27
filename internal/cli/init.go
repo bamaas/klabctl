@@ -3,7 +3,6 @@ package cli
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
@@ -52,15 +51,11 @@ func initProject(clusterName string) error {
 	klabctlDir := ".klabctl"
 	cacheDir := filepath.Join(klabctlDir, "cache", "stack")
 
-	fmt.Printf("📦 Pulling stack from %s@%s...\n", stackSource, stackVersion)
-
-	// Pull stack to cache: .klabctl/cache/stack/<version>/
+	// Ensure stack is available using pull.go functionality
 	stackCacheDir := filepath.Join(cacheDir, stackVersion)
-	if err := pullStack(stackSource, stackVersion, stackCacheDir); err != nil {
-		return fmt.Errorf("failed to pull stack: %w", err)
+	if err := EnsureStackAvailable(stackSource, stackVersion, stackCacheDir); err != nil {
+		return err
 	}
-
-	fmt.Println("✓ Stack pulled successfully")
 
 	// Create .klabctl/config.yaml to track the stack version
 	configPath := filepath.Join(klabctlDir, "config.yaml")
@@ -92,41 +87,6 @@ func initProject(clusterName string) error {
 	fmt.Printf("  2. Run 'klabctl render --site %s' to generate manifests\n", siteYamlPath)
 	fmt.Println("  3. Deploy your cluster!")
 	fmt.Println()
-
-	return nil
-}
-
-// pullStack clones the stack repository to the cache directory
-func pullStack(source, version, destDir string) error {
-	// Check if git is available
-	if _, err := exec.LookPath("git"); err != nil {
-		return fmt.Errorf("git not found in PATH")
-	}
-
-	// Remove existing directory if it exists
-	if err := os.RemoveAll(destDir); err != nil {
-		return fmt.Errorf("failed to remove existing cache: %w", err)
-	}
-
-	// Create parent directory
-	if err := os.MkdirAll(filepath.Dir(destDir), 0755); err != nil {
-		return fmt.Errorf("failed to create cache directory: %w", err)
-	}
-
-	// Clone repository
-	cmd := exec.Command("git", "clone", "--depth", "1", "--branch", version, source, destDir)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("git clone failed: %w", err)
-	}
-
-	// Remove .git directory to save space
-	gitDir := filepath.Join(destDir, ".git")
-	if err := os.RemoveAll(gitDir); err != nil {
-		fmt.Printf("Warning: failed to remove .git directory: %v\n", err)
-	}
 
 	return nil
 }
