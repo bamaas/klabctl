@@ -26,4 +26,5 @@ func init() {
 	rootCmd.AddCommand(newProvisionInfraCmd())
 	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newPullCmd())
+	rootCmd.AddCommand(newGetCmd())
 }
