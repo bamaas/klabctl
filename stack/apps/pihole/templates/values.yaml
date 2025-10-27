@@ -1,8 +1,11 @@
 ---
-# Default values for pihole
-# These are merged into site.yaml during 'klabctl init'
+# Hostname for PiHole web interface ingress
+# Used by external-dns to configure DNS server URL
+host: "pihole.example.local"
 
-host: "pihole.example.local"  # Hostname for PiHole ingress
-ip: "192.168.1.120"  # LoadBalancer IP for PiHole DNS service
-password: "changeme"  # Web interface password
+# LoadBalancer IP for PiHole DNS service (UDP/TCP port 53)
+# This IP will be assigned by MetalLB
+ip: "192.168.1.120"
 
+# Web interface admin password - Change this to secure your PiHole installation
+password: "changeme"
