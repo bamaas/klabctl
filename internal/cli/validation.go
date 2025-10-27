@@ -56,36 +56,7 @@ func discoverComponentSchemas(site *config.Site) (map[string]*config.ComponentSc
 	return schemas, err
 }
 
-// discoverInfraSchema finds the infrastructure schema in the cache
-func discoverInfraSchema(site *config.Site) (*config.ComponentSchema, error) {
-	// Check for schema in infra/templates/schema.yaml
-	schemaPath := filepath.Join(getStackCacheDir(site), "stack", "infra", "templates", "schema.yaml")
-
-	// Check if schema exists
-	if _, err := os.Stat(schemaPath); os.IsNotExist(err) {
-		return nil, nil // No schema found, not an error
-	}
-
-	// Read and parse schema
-	schemaData, err := os.ReadFile(schemaPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read infra schema: %w", err)
-	}
-
-	var schema config.ComponentSchema
-	if err := yaml.Unmarshal(schemaData, &schema); err != nil {
-		return nil, fmt.Errorf("failed to parse infra schema: %w", err)
-	}
-
-	// Validate schema itself
-	if schema.ComponentName == "" {
-		return nil, fmt.Errorf("infra schema missing componentName field")
-	}
-
-	return &schema, nil
-}
-
-// validateSiteAgainstSchemas validates site.yaml against all component schemas
+// validateSiteAgainstSchemas validates site.yaml against app component schemas
 func validateSiteAgainstSchemas(site *config.Site) error {
 	// Discover all component schemas
 	schemas, err := discoverComponentSchemas(site)
@@ -93,42 +64,16 @@ func validateSiteAgainstSchemas(site *config.Site) error {
 		return fmt.Errorf("failed to discover schemas: %w", err)
 	}
 
-	// Discover infra schema
-	infraSchema, err := discoverInfraSchema(site)
-	if err != nil {
-		return fmt.Errorf("failed to discover infra schema: %w", err)
-	}
-
-	schemaCount := len(schemas)
-	if infraSchema != nil {
-		schemaCount++
-	}
-
-	if schemaCount == 0 {
-		fmt.Println("⚠ Warning: No schemas found, skipping validation")
+	if len(schemas) == 0 {
+		fmt.Println("⚠ Warning: No component schemas found, skipping validation")
 		return nil
 	}
 
-	fmt.Printf("Found %d schema(s)\n", schemaCount)
+	fmt.Printf("Found %d component schema(s)\n", len(schemas))
 
 	var allErrors []string
 
-	// Validate infrastructure if configured and schema exists
-	if site.Spec.Infra.Provider.Name != "" && infraSchema != nil {
-		// Convert infra config to component-like structure for validation
-		infraComponent := config.Component{
-			Enabled: true,
-			Values:  convertInfraToValues(site.Spec.Infra),
-		}
-
-		if errs := validateComponent("infra", infraComponent, infraSchema); len(errs) > 0 {
-			allErrors = append(allErrors, errs...)
-		} else {
-			fmt.Printf("  ✓ infra: validated\n")
-		}
-	}
-
-	// Validate each enabled component
+	// Validate each enabled app component
 	for componentName, component := range site.Spec.Apps.Catalog {
 		if !component.Enabled {
 			continue
@@ -153,89 +98,8 @@ func validateSiteAgainstSchemas(site *config.Site) error {
 		return fmt.Errorf("validation errors:\n\n%s", strings.Join(allErrors, "\n"))
 	}
 
-	fmt.Printf("\n✓ All configurations validated successfully\n\n")
+	fmt.Printf("\n✓ All app components validated successfully\n\n")
 	return nil
-}
-
-// convertInfraToValues converts the Infra struct to a map for validation
-func convertInfraToValues(infra config.Infra) map[string]interface{} {
-	values := make(map[string]interface{})
-
-	// Provider
-	if infra.Provider.Name != "" {
-		provider := make(map[string]interface{})
-		provider["name"] = infra.Provider.Name
-
-		if infra.Provider.Name == "proxmox" {
-			proxmox := make(map[string]interface{})
-			if infra.Provider.Proxmox.Endpoint != "" {
-				proxmox["endpoint"] = infra.Provider.Proxmox.Endpoint
-			}
-			if infra.Provider.Proxmox.TokenID != "" {
-				proxmox["tokenID"] = infra.Provider.Proxmox.TokenID
-			}
-			provider["proxmox"] = proxmox
-		}
-
-		values["provider"] = provider
-	}
-
-	// TalosImage
-	talosImage := make(map[string]interface{})
-	if infra.TalosImage.URL != "" {
-		talosImage["url"] = infra.TalosImage.URL
-	}
-	if infra.TalosImage.FileName != "" {
-		talosImage["fileName"] = infra.TalosImage.FileName
-	}
-	if infra.TalosImage.NodeName != "" {
-		talosImage["nodeName"] = infra.TalosImage.NodeName
-	}
-	if infra.TalosImage.DatastoreId != "" {
-		talosImage["datastoreId"] = infra.TalosImage.DatastoreId
-	}
-	talosImage["overwrite"] = infra.TalosImage.Overwrite
-	if infra.TalosImage.ContentType != "" {
-		talosImage["contentType"] = infra.TalosImage.ContentType
-	}
-	if len(talosImage) > 0 {
-		values["talosImage"] = talosImage
-	}
-
-	// Cluster
-	cluster := make(map[string]interface{})
-	if infra.Cluster.Name != "" {
-		cluster["name"] = infra.Cluster.Name
-	}
-	if infra.Cluster.Endpoint != "" {
-		cluster["endpoint"] = infra.Cluster.Endpoint
-	}
-	if infra.Cluster.VirtualSharedIp != "" {
-		cluster["virtualSharedIp"] = infra.Cluster.VirtualSharedIp
-	}
-	if infra.Cluster.Domain != "" {
-		cluster["domain"] = infra.Cluster.Domain
-	}
-	if infra.Cluster.DefaultGateway != "" {
-		cluster["defaultGateway"] = infra.Cluster.DefaultGateway
-	}
-	if len(cluster) > 0 {
-		values["cluster"] = cluster
-	}
-
-	// NodeData
-	nodeData := make(map[string]interface{})
-	if len(infra.NodeData.ControlPlanes) > 0 {
-		nodeData["controlPlanes"] = infra.NodeData.ControlPlanes
-	}
-	if len(infra.NodeData.Workers) > 0 {
-		nodeData["workers"] = infra.NodeData.Workers
-	}
-	if len(nodeData) > 0 {
-		values["nodeData"] = nodeData
-	}
-
-	return values
 }
 
 // validateComponent validates a single component against its schema

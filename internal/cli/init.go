@@ -143,20 +143,20 @@ func createGitignore(outputPath string) error {
 // loadInfraDefaults loads the default infra values from the stack cache
 func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
 	valuesPath := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "infra", "templates", "values.yaml")
-	
+
 	// Read the values file
 	data, err := os.ReadFile(valuesPath)
 	if err != nil {
 		// If values file doesn't exist, return empty map (backward compatibility)
 		return make(map[string]interface{}), nil
 	}
-	
+
 	// Parse YAML
 	var values map[string]interface{}
 	if err := yaml.Unmarshal(data, &values); err != nil {
 		return nil, fmt.Errorf("failed to parse infra values: %w", err)
 	}
-	
+
 	return values, nil
 }
 
@@ -167,7 +167,7 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 	if err != nil {
 		return fmt.Errorf("failed to load infra defaults: %w", err)
 	}
-	
+
 	// Override cluster name in defaults
 	if cluster, ok := infraDefaults["cluster"].(map[string]interface{}); ok {
 		cluster["name"] = clusterName
@@ -206,12 +206,12 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 			},
 		},
 	}
-	
+
 	// Add infra section if defaults were loaded
 	if len(infraDefaults) > 0 {
 		spec["infra"] = infraDefaults
 	}
-	
+
 	site := map[string]interface{}{
 		"apiVersion": "klab/v1alpha1",
 		"kind":       "Site",
