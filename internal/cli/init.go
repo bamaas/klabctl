@@ -228,16 +228,6 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 	// Build app catalog dynamically
 	catalog := make(map[string]interface{})
 	
-	// Define which apps should be enabled by default
-	defaultEnabled := map[string]bool{
-		"cilium":        true,
-		"metallb":       true,
-		"ingress-nginx": true,
-		"cert-manager":  false,
-		"pihole":        false,
-		"external-dns":  false,
-	}
-	
 	for _, appName := range discoveredApps {
 		// Load defaults for this app
 		appDefaults, err := loadAppDefaults(stackVersion, appName)
@@ -245,14 +235,8 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 			return fmt.Errorf("failed to load defaults for %s: %w", appName, err)
 		}
 		
-		// Determine if enabled by default
-		enabled, hasDefault := defaultEnabled[appName]
-		if !hasDefault {
-			enabled = false // Default to disabled for unknown apps
-		}
-		
 		appConfig := map[string]interface{}{
-			"enabled": enabled,
+			"enabled": true,
 		}
 		
 		// Add values if they exist
