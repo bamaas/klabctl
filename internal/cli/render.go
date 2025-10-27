@@ -9,7 +9,6 @@ import (
 	"text/template"
 
 	"github.com/bamaas/klabctl/internal/config"
-	"github.com/bamaas/klabctl/internal/templates"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +21,35 @@ type TemplateData struct {
 	AllComponents map[string]config.Component
 }
 
-// RenderComponentKustomizationTemplate renders the kustomization.yaml.tmpl template for a specific component from embedded files
+// getStackCacheDir returns the path to the cached stack directory
+func getStackCacheDir(site *config.Site) string {
+	return filepath.Join(".klabctl", "cache", "stack", site.Spec.Stack.Version)
+}
+
+// getStackTemplatesDir returns the path to the stack templates directory in cache
+func getStackTemplatesDir(site *config.Site) string {
+	return filepath.Join(getStackCacheDir(site), "stack", "templates")
+}
+
+// getStackAppsDir returns the path to the stack apps directory in cache
+func getStackAppsDir(site *config.Site) string {
+	return filepath.Join(getStackCacheDir(site), "stack", "apps")
+}
+
+// readTemplateFromCache reads a template file from the cache
+func readTemplateFromCache(site *config.Site, templatePath string) ([]byte, error) {
+	// Check if it's an app-specific template (apps/{appName}/templates/{file})
+	if strings.HasPrefix(templatePath, "apps/") {
+		fullPath := filepath.Join(getStackCacheDir(site), "stack", templatePath)
+		return os.ReadFile(fullPath)
+	}
+
+	// Otherwise it's a general template (templates/{file})
+	fullPath := filepath.Join(getStackTemplatesDir(site), templatePath)
+	return os.ReadFile(fullPath)
+}
+
+// RenderComponentKustomizationTemplate renders the kustomization.yaml.tmpl template for a specific component from cache
 func RenderKustomizationTemplate(site *config.Site, componentName string, component *config.Component, templateName, outputPath string) error {
 
 	// Create template with custom functions
@@ -33,22 +60,22 @@ func RenderKustomizationTemplate(site *config.Site, componentName string, compon
 	}
 
 	// Read header template first
-	headerContent, err := templates.EmbeddedTemplates.ReadFile("apps/header.kustomization.yaml.tmpl")
+	headerContent, err := readTemplateFromCache(site, "header.kustomization.yaml.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to read header template: %w", err)
 	}
 
 	// Read base template
-	baseTemplatePath := "apps/base.kustomization.yaml.tmpl"
-	baseContent, err := templates.EmbeddedTemplates.ReadFile(baseTemplatePath)
+	baseTemplatePath := "base.kustomization.yaml.tmpl"
+	baseContent, err := readTemplateFromCache(site, baseTemplatePath)
 	if err != nil {
 		return fmt.Errorf("failed to read base template %s: %w", baseTemplatePath, err)
 	}
 
 	// Read component-specific template
-	templateContent, err := templates.EmbeddedTemplates.ReadFile(templateName)
+	templateContent, err := readTemplateFromCache(site, templateName)
 	if err != nil {
-		return fmt.Errorf("failed to read embedded template %s: %w", templateName, err)
+		return fmt.Errorf("failed to read template %s: %w", templateName, err)
 	}
 
 	// Parse all templates together (header, base, and component-specific)
@@ -102,7 +129,7 @@ func RenderKustomizationTemplate(site *config.Site, componentName string, compon
 	return nil
 }
 
-// RenderTemplate renders any template to a file using embedded templates
+// RenderTemplate renders any template to a file using cache templates
 func RenderTemplate(site *config.Site, componentName string, component *config.Component, templateName, outputPath string) error {
 	// Create template with custom functions
 	funcMap := template.FuncMap{
@@ -112,22 +139,22 @@ func RenderTemplate(site *config.Site, componentName string, component *config.C
 	}
 
 	// Read header template first
-	headerContent, err := templates.EmbeddedTemplates.ReadFile("apps/header.kustomization.yaml.tmpl")
+	headerContent, err := readTemplateFromCache(site, "header.kustomization.yaml.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to read header template: %w", err)
 	}
 
 	// Read base template (for inheritance)
-	baseTemplatePath := "apps/base.kustomization.yaml.tmpl"
-	baseContent, err := templates.EmbeddedTemplates.ReadFile(baseTemplatePath)
+	baseTemplatePath := "base.kustomization.yaml.tmpl"
+	baseContent, err := readTemplateFromCache(site, baseTemplatePath)
 	if err != nil {
 		return fmt.Errorf("failed to read base template %s: %w", baseTemplatePath, err)
 	}
 
 	// Read component-specific template
-	templateContent, err := templates.EmbeddedTemplates.ReadFile(templateName)
+	templateContent, err := readTemplateFromCache(site, templateName)
 	if err != nil {
-		return fmt.Errorf("failed to read embedded template %s: %w", templateName, err)
+		return fmt.Errorf("failed to read template %s: %w", templateName, err)
 	}
 
 	// Parse all templates together (header, base, and component-specific)
@@ -184,13 +211,13 @@ func RenderTemplate(site *config.Site, componentName string, component *config.C
 // createRootKustomization creates the root kustomization.yaml that references generated + custom
 func createRootKustomization(site *config.Site, componentName, outputPath string) error {
 	// Read header template first
-	headerContent, err := templates.EmbeddedTemplates.ReadFile("apps/header.kustomization.yaml.tmpl")
+	headerContent, err := readTemplateFromCache(site, "header.kustomization.yaml.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to read header kustomization template: %w", err)
 	}
 
 	// Read root template
-	templateContent, err := templates.EmbeddedTemplates.ReadFile("apps/root.kustomization.yaml.tmpl")
+	templateContent, err := readTemplateFromCache(site, "root.kustomization.yaml.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to read root kustomization template: %w", err)
 	}
@@ -227,39 +254,16 @@ func createRootKustomization(site *config.Site, componentName, outputPath string
 	return nil
 }
 
-// validateBaseComponents checks if the required base components exist
-func validateBaseComponents(site *config.Site) error {
-	// Check each enabled component has its own base directory
-	var missingComponents []string
-	for componentName, component := range site.Spec.Apps.Catalog {
-		if !component.Enabled {
-			continue
-		}
-
-		// Check if clusters/{site}/apps/{component}/base exists
-		componentBasePath := filepath.Join("clusters", site.Metadata.Name, "apps", componentName, "base")
-		if _, err := os.Stat(componentBasePath); os.IsNotExist(err) {
-			missingComponents = append(missingComponents, componentName)
-		}
-	}
-
-	if len(missingComponents) > 0 {
-		return fmt.Errorf("missing base for components: %v. Run 'klabctl vendor' to sync base applications", missingComponents)
-	}
-
-	return nil
-}
-
 // createCustomKustomizationTemplate creates an empty custom kustomization.yaml template for users
-func createCustomKustomizationTemplate(outputPath string) error {
+func createCustomKustomizationTemplate(site *config.Site, outputPath string) error {
 	// Read header template first
-	headerContent, err := templates.EmbeddedTemplates.ReadFile("apps/header.kustomization.yaml.tmpl")
+	headerContent, err := readTemplateFromCache(site, "header.kustomization.yaml.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to read header kustomization template: %w", err)
 	}
 
 	// Read custom template
-	templateContent, err := templates.EmbeddedTemplates.ReadFile("apps/custom.kustomization.yaml.tmpl")
+	templateContent, err := readTemplateFromCache(site, "custom.kustomization.yaml.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to read custom kustomization template: %w", err)
 	}
@@ -288,9 +292,9 @@ func createCustomKustomizationTemplate(outputPath string) error {
 	return nil
 }
 
-func createCustomValuesTemplate(outputPath string) error {
+func createCustomValuesTemplate(site *config.Site, outputPath string) error {
 	// Read custom values template
-	templateContent, err := templates.EmbeddedTemplates.ReadFile("apps/custom.values.yaml.tmpl")
+	templateContent, err := readTemplateFromCache(site, "custom.values.yaml.tmpl")
 	if err != nil {
 		return fmt.Errorf("failed to read custom values template: %w", err)
 	}
@@ -313,21 +317,32 @@ func createCustomValuesTemplate(outputPath string) error {
 	return nil
 }
 
-// FindComponentTemplates finds all templates for a specific component
-func FindAppTemplates(componentName string) ([]string, error) {
+// FindAppTemplates finds all templates for a specific component in the cache
+func FindAppTemplates(site *config.Site, componentName string) ([]string, error) {
 	var componentTemplates []string
 
-	// Check for component-specific templates
-	componentDir := fmt.Sprintf("apps/%s/", componentName)
+	// Check for component-specific templates in cache
+	componentDir := filepath.Join(getStackAppsDir(site), componentName, "templates")
 
-	// Walk through embedded filesystem to find templates for this component
-	err := fs.WalkDir(templates.EmbeddedTemplates, ".", func(path string, d fs.DirEntry, err error) error {
+	// Check if the templates directory exists
+	if _, err := os.Stat(componentDir); os.IsNotExist(err) {
+		// No templates for this component
+		return componentTemplates, nil
+	}
+
+	// Walk through the component's templates directory
+	err := filepath.WalkDir(componentDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
-		// Check if this template belongs to the component
-		if strings.HasPrefix(path, componentDir) && strings.HasSuffix(path, ".tmpl") {
-			componentTemplates = append(componentTemplates, path)
+		// Only include .tmpl files
+		if !d.IsDir() && strings.HasSuffix(path, ".tmpl") {
+			// Convert absolute path to relative path from stack directory
+			relPath, err := filepath.Rel(filepath.Join(getStackCacheDir(site), "stack"), path)
+			if err != nil {
+				return err
+			}
+			componentTemplates = append(componentTemplates, relPath)
 		}
 		return nil
 	})
@@ -346,20 +361,32 @@ func newRenderCmd() *cobra.Command {
 				return err
 			}
 
+			// Ensure stack is available before rendering
+			if site.Spec.Stack.Source == "" || site.Spec.Stack.Version == "" {
+				return fmt.Errorf("stack.source and stack.version are required in site.yaml")
+			}
+
+			stackCacheDir := getStackCacheDir(site)
+			fmt.Println("Ensuring stack is available...")
+			if err := EnsureStackAvailable(site.Spec.Stack.Source, site.Spec.Stack.Version, stackCacheDir); err != nil {
+				return fmt.Errorf("failed to ensure stack is available: %w", err)
+			}
+
 			// Validate site.yaml against component schemas
 			fmt.Println("Validating site configuration...")
 			if err := validateSiteAgainstSchemas(site); err != nil {
 				return err
 			}
 
-			// Validate base components exist before rendering
-			if err := validateBaseComponents(site); err != nil {
-				return err
-			}
-
 			// Generate infrastructure if configured
 			if site.Spec.Infra.Base.Source != "" {
 				fmt.Println("Generating infrastructure...")
+
+				// Copy infra base from cache
+				fmt.Println("Copying infra base from cache...")
+				if err := copyInfraBase(site); err != nil {
+					return fmt.Errorf("failed to copy infra base: %w", err)
+				}
 
 				terraformDir := filepath.Join("clusters", site.Metadata.Name, "infra", "generated")
 				if err := os.MkdirAll(terraformDir, 0755); err != nil {
@@ -370,6 +397,7 @@ func newRenderCmd() *cobra.Command {
 					return fmt.Errorf("generate terraform root: %w", err)
 				}
 
+				fmt.Printf("✓ Copied infra base from cache\n")
 				fmt.Printf("✓ Generated Terraform root in %s\n", terraformDir)
 			}
 
@@ -383,10 +411,18 @@ func newRenderCmd() *cobra.Command {
 
 			// Render all templates for each component
 			renderedCount := 0
+			copiedCount := 0
 			for componentName, component := range site.Spec.Apps.Catalog {
 				if !component.Enabled {
 					continue // Skip disabled components
 				}
+
+				// Copy app base from cache to cluster directory
+				fmt.Printf("Copying base for %s...\n", componentName)
+				if err := copyAppBase(site, componentName); err != nil {
+					return fmt.Errorf("failed to copy base for %s: %w", componentName, err)
+				}
+				copiedCount++
 
 				// Create component directory structure
 				componentPath := filepath.Join(appsPath, componentName)
@@ -414,7 +450,7 @@ func newRenderCmd() *cobra.Command {
 				// create custom/values.yaml if it doesn't exist
 				customValuesPath := filepath.Join(customPath, "values.yaml")
 				if _, err := os.Stat(customValuesPath); os.IsNotExist(err) {
-					if err := createCustomValuesTemplate(customValuesPath); err != nil {
+					if err := createCustomValuesTemplate(site, customValuesPath); err != nil {
 						return fmt.Errorf("failed to create custom values template for %s: %w", componentName, err)
 					}
 				}
@@ -422,13 +458,13 @@ func newRenderCmd() *cobra.Command {
 				// Create custom kustomization.yaml if it doesn't exist
 				customKustomizationPath := filepath.Join(customPath, "kustomization.yaml")
 				if _, err := os.Stat(customKustomizationPath); os.IsNotExist(err) {
-					if err := createCustomKustomizationTemplate(customKustomizationPath); err != nil {
+					if err := createCustomKustomizationTemplate(site, customKustomizationPath); err != nil {
 						return fmt.Errorf("failed to create custom kustomization template for %s: %w", componentName, err)
 					}
 				}
 
 				// Find all templates for this component
-				componentTemplates, err := FindAppTemplates(componentName)
+				componentTemplates, err := FindAppTemplates(site, componentName)
 				if err != nil {
 					return fmt.Errorf("failed to find templates for component %s: %w", componentName, err)
 				}
@@ -438,7 +474,7 @@ func newRenderCmd() *cobra.Command {
 
 				// If no app specific templates found, use base template
 				if len(componentTemplates) == 0 {
-					templateName := "apps/base.kustomization.yaml.tmpl"
+					templateName := "base.kustomization.yaml.tmpl"
 					if err := RenderKustomizationTemplate(site, componentName, &component, templateName, generatedKustomizationPath); err != nil {
 						return fmt.Errorf("failed to render base template for component %s: %w", componentName, err)
 					}
@@ -462,7 +498,8 @@ func newRenderCmd() *cobra.Command {
 				}
 			}
 
-			fmt.Printf("Rendered %d component kustomization files\n", renderedCount)
+			fmt.Printf("\n✓ Copied %d app base(s) from cache\n", copiedCount)
+			fmt.Printf("✓ Rendered %d component kustomization files\n", renderedCount)
 			return nil
 		},
 	}
@@ -493,22 +530,142 @@ func generateTerraformRoot(dir string, site *config.Site) error {
 	}
 
 	// Render main.tf
-	if err := renderInfraTemplate("infra/main.tf.tmpl", filepath.Join(dir, "main.tf"), data); err != nil {
+	if err := renderInfraTemplate(site, "main.tf.tmpl", filepath.Join(dir, "main.tf"), data); err != nil {
 		return fmt.Errorf("render main.tf: %w", err)
 	}
 
 	// Render terraform.tfvars.json
-	if err := renderInfraTemplate("infra/terraform.tfvars.json.tmpl", filepath.Join(dir, "terraform.tfvars.json"), data); err != nil {
+	if err := renderInfraTemplate(site, "terraform.tfvars.json.tmpl", filepath.Join(dir, "terraform.tfvars.json"), data); err != nil {
 		return fmt.Errorf("render terraform.tfvars.json: %w", err)
 	}
 
 	return nil
 }
 
-// renderInfraTemplate renders an infrastructure template to a file
-func renderInfraTemplate(templateName, outputPath string, data interface{}) error {
-	// Read template content
-	templateContent, err := templates.EmbeddedTemplates.ReadFile(templateName)
+// copyAppBase copies an app's base from cache to cluster directory
+func copyAppBase(site *config.Site, appName string) error {
+	// Source: cache/stack/{version}/stack/apps/{appName}/base
+	sourcePath := filepath.Join(getStackCacheDir(site), "stack", "apps", appName, "base")
+
+	// Check if source exists
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		return fmt.Errorf("app base not found in cache: %s", appName)
+	}
+
+	// Destination: clusters/{site}/apps/{appName}/base
+	destPath := filepath.Join("clusters", site.Metadata.Name, "apps", appName, "base")
+
+	// Remove existing base directory
+	if err := os.RemoveAll(destPath); err != nil {
+		return fmt.Errorf("failed to remove existing base: %w", err)
+	}
+
+	// Copy base
+	if err := copyDir(sourcePath, destPath); err != nil {
+		return fmt.Errorf("failed to copy app base: %w", err)
+	}
+
+	return nil
+}
+
+// copyInfraBase copies infrastructure base from cache to cluster directory
+func copyInfraBase(site *config.Site) error {
+	// Determine the infra base path in cache
+	// For klabctl, it should be in stack/infra/base
+	sourcePath := filepath.Join(getStackCacheDir(site), "stack", "infra", "base")
+
+	// Check if source exists
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		return fmt.Errorf("infra base not found in cache at: %s", sourcePath)
+	}
+
+	// Destination: clusters/{site}/infra/base
+	destPath := filepath.Join("clusters", site.Metadata.Name, "infra", "base")
+
+	// Remove existing base directory
+	if err := os.RemoveAll(destPath); err != nil {
+		return fmt.Errorf("failed to remove existing infra base: %w", err)
+	}
+
+	// Copy base
+	if err := copyDir(sourcePath, destPath); err != nil {
+		return fmt.Errorf("failed to copy infra base: %w", err)
+	}
+
+	return nil
+}
+
+// copyDir recursively copies a directory
+func copyDir(src, dst string) error {
+	// Get source directory info
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	// Create destination directory
+	if err := os.MkdirAll(dst, srcInfo.Mode()); err != nil {
+		return err
+	}
+
+	// Read source directory
+	entries, err := os.ReadDir(src)
+	if err != nil {
+		return err
+	}
+
+	for _, entry := range entries {
+		srcPath := filepath.Join(src, entry.Name())
+		dstPath := filepath.Join(dst, entry.Name())
+
+		if entry.IsDir() {
+			// Recursively copy subdirectory
+			if err := copyDir(srcPath, dstPath); err != nil {
+				return err
+			}
+		} else {
+			// Copy file
+			if err := copyFile(srcPath, dstPath); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// copyFile copies a single file
+func copyFile(src, dst string) error {
+	srcFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer srcFile.Close()
+
+	// Get source file info to preserve permissions
+	srcInfo, err := os.Stat(src)
+	if err != nil {
+		return err
+	}
+
+	dstFile, err := os.OpenFile(dst, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, srcInfo.Mode())
+	if err != nil {
+		return err
+	}
+	defer dstFile.Close()
+
+	if _, err := srcFile.WriteTo(dstFile); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// renderInfraTemplate renders an infrastructure template to a file from cache
+func renderInfraTemplate(site *config.Site, templateName, outputPath string, data interface{}) error {
+	// Read template content from cache (infra templates are in stack/infra/templates/)
+	fullPath := filepath.Join(getStackCacheDir(site), "stack", "infra", "templates", templateName)
+	templateContent, err := os.ReadFile(fullPath)
 	if err != nil {
 		return fmt.Errorf("read template %s: %w", templateName, err)
 	}

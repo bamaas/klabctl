@@ -3,20 +3,28 @@ package cli
 import (
 	"fmt"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
 	"github.com/bamaas/klabctl/internal/config"
-	"github.com/bamaas/klabctl/internal/templates"
 	"gopkg.in/yaml.v3"
 )
 
-// discoverComponentSchemas finds all component schemas in the embedded templates
-func discoverComponentSchemas() (map[string]*config.ComponentSchema, error) {
+// discoverComponentSchemas finds all component schemas in the cache
+func discoverComponentSchemas(site *config.Site) (map[string]*config.ComponentSchema, error) {
 	schemas := make(map[string]*config.ComponentSchema)
 
-	// Walk the apps directory
-	err := fs.WalkDir(templates.EmbeddedTemplates, "apps", func(path string, d fs.DirEntry, err error) error {
+	// Walk the apps directory in cache
+	appsDir := getStackAppsDir(site)
+
+	// Check if apps directory exists
+	if _, err := os.Stat(appsDir); os.IsNotExist(err) {
+		return schemas, nil
+	}
+
+	err := filepath.WalkDir(appsDir, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -24,7 +32,7 @@ func discoverComponentSchemas() (map[string]*config.ComponentSchema, error) {
 		// Look for schema.yaml files
 		if !d.IsDir() && d.Name() == "schema.yaml" {
 			// Read and parse schema
-			schemaData, err := fs.ReadFile(templates.EmbeddedTemplates, path)
+			schemaData, err := os.ReadFile(path)
 			if err != nil {
 				return fmt.Errorf("failed to read schema %s: %w", path, err)
 			}
@@ -51,7 +59,7 @@ func discoverComponentSchemas() (map[string]*config.ComponentSchema, error) {
 // validateSiteAgainstSchemas validates site.yaml against all component schemas
 func validateSiteAgainstSchemas(site *config.Site) error {
 	// Discover all component schemas
-	schemas, err := discoverComponentSchemas()
+	schemas, err := discoverComponentSchemas(site)
 	if err != nil {
 		return fmt.Errorf("failed to discover schemas: %w", err)
 	}
