@@ -1,0 +1,5 @@
+---
+# Default values for cilium
+# These are merged into site.yaml during 'klabctl init'
+# Cilium typically requires no custom values
+

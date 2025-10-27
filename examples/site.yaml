@@ -6,11 +6,6 @@ metadata:
 spec:
   # Infrastructure provisioning configuration
   infra:
-    base:
-      source: "https://github.com/bamaas/HomeLab-2.0"
-      ref: "main"
-      path: "provision/core"
-    
     provider:
       name: proxmox
       proxmox:

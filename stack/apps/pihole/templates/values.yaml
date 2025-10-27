@@ -1,0 +1,8 @@
+---
+# Default values for pihole
+# These are merged into site.yaml during 'klabctl init'
+
+host: "pihole.example.local"  # Hostname for PiHole ingress
+ip: "192.168.1.120"  # LoadBalancer IP for PiHole DNS service
+password: "changeme"  # Web interface password
+

@@ -372,12 +372,6 @@ func newRenderCmd() *cobra.Command {
 				return fmt.Errorf("failed to ensure stack is available: %w", err)
 			}
 
-			// Validate site.yaml against component schemas
-			fmt.Println("Validating site configuration...")
-			if err := validateSiteAgainstSchemas(site); err != nil {
-				return err
-			}
-
 			// Generate infrastructure if configured (check if provider is set)
 			if site.Spec.Infra.Provider.Name != "" {
 				fmt.Println("Generating infrastructure...")

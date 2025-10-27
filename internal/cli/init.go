@@ -143,21 +143,67 @@ func createGitignore(outputPath string) error {
 // loadInfraDefaults loads the default infra values from the stack cache
 func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
 	valuesPath := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "infra", "templates", "values.yaml")
-
+	
 	// Read the values file
 	data, err := os.ReadFile(valuesPath)
 	if err != nil {
 		// If values file doesn't exist, return empty map (backward compatibility)
 		return make(map[string]interface{}), nil
 	}
-
+	
 	// Parse YAML
 	var values map[string]interface{}
 	if err := yaml.Unmarshal(data, &values); err != nil {
 		return nil, fmt.Errorf("failed to parse infra values: %w", err)
 	}
-
+	
 	return values, nil
+}
+
+// loadAppDefaults loads default values for a specific app from the stack cache
+func loadAppDefaults(stackVersion, appName string) (map[string]interface{}, error) {
+	valuesPath := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "apps", appName, "templates", "values.yaml")
+	
+	// Read the values file
+	data, err := os.ReadFile(valuesPath)
+	if err != nil {
+		// If values file doesn't exist, return empty map
+		return make(map[string]interface{}), nil
+	}
+	
+	// Parse YAML
+	var values map[string]interface{}
+	if err := yaml.Unmarshal(data, &values); err != nil {
+		return nil, fmt.Errorf("failed to parse %s values: %w", appName, err)
+	}
+	
+	return values, nil
+}
+
+// discoverAppsWithDefaults discovers all apps that have templates/values.yaml in the stack
+func discoverAppsWithDefaults(stackVersion string) ([]string, error) {
+	appsDir := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "apps")
+	
+	var apps []string
+	entries, err := os.ReadDir(appsDir)
+	if err != nil {
+		// If apps directory doesn't exist, return empty list
+		return apps, nil
+	}
+	
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		
+		// Check if this app has a templates/values.yaml
+		valuesPath := filepath.Join(appsDir, entry.Name(), "templates", "values.yaml")
+		if _, err := os.Stat(valuesPath); err == nil {
+			apps = append(apps, entry.Name())
+		}
+	}
+	
+	return apps, nil
 }
 
 // generateSiteYaml creates a basic site.yaml file
@@ -167,46 +213,67 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 	if err != nil {
 		return fmt.Errorf("failed to load infra defaults: %w", err)
 	}
-
+	
 	// Override cluster name in defaults
 	if cluster, ok := infraDefaults["cluster"].(map[string]interface{}); ok {
 		cluster["name"] = clusterName
 	}
-	// Build spec with loaded infra defaults
+	
+	// Discover all apps with defaults
+	discoveredApps, err := discoverAppsWithDefaults(stackVersion)
+	if err != nil {
+		return fmt.Errorf("failed to discover apps: %w", err)
+	}
+	
+	// Build app catalog dynamically
+	catalog := make(map[string]interface{})
+	
+	// Define which apps should be enabled by default
+	defaultEnabled := map[string]bool{
+		"cilium":        true,
+		"metallb":       true,
+		"ingress-nginx": true,
+		"cert-manager":  false,
+		"pihole":        false,
+		"external-dns":  false,
+	}
+	
+	for _, appName := range discoveredApps {
+		// Load defaults for this app
+		appDefaults, err := loadAppDefaults(stackVersion, appName)
+		if err != nil {
+			return fmt.Errorf("failed to load defaults for %s: %w", appName, err)
+		}
+		
+		// Determine if enabled by default
+		enabled, hasDefault := defaultEnabled[appName]
+		if !hasDefault {
+			enabled = false // Default to disabled for unknown apps
+		}
+		
+		appConfig := map[string]interface{}{
+			"enabled": enabled,
+		}
+		
+		// Add values if they exist
+		if len(appDefaults) > 0 {
+			appConfig["values"] = appDefaults
+		}
+		
+		catalog[appName] = appConfig
+	}
+	
+	// Build spec
 	spec := map[string]interface{}{
 		"stack": map[string]string{
 			"source":  stackSource,
 			"version": stackVersion,
 		},
 		"apps": map[string]interface{}{
-			"catalog": map[string]interface{}{
-				"cilium": map[string]interface{}{
-					"enabled": true,
-				},
-				"metallb": map[string]interface{}{
-					"enabled": true,
-				},
-				"ingress-nginx": map[string]interface{}{
-					"enabled": true,
-					"values": map[string]interface{}{
-						"ip": "192.168.1.150",
-					},
-				},
-				"cert-manager": map[string]interface{}{
-					"enabled": false,
-					"values": map[string]interface{}{
-						"letsencrypt": map[string]interface{}{
-							"email": "admin@example.com",
-						},
-						"cloudflare": map[string]interface{}{
-							"apiToken": "your-cloudflare-api-token-here",
-						},
-					},
-				},
-			},
+			"catalog": catalog,
 		},
 	}
-
+	
 	// Add infra section if defaults were loaded
 	if len(infraDefaults) > 0 {
 		spec["infra"] = infraDefaults

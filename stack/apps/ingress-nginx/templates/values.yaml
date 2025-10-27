@@ -1,0 +1,6 @@
+---
+# Default values for ingress-nginx
+# These are merged into site.yaml during 'klabctl init'
+
+ip: "192.168.1.150"  # LoadBalancer IP for ingress service
+

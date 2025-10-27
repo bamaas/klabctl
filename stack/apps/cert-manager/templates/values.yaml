@@ -1,0 +1,10 @@
+---
+# Default values for cert-manager
+# These are merged into site.yaml during 'klabctl init'
+
+letsencrypt:
+  email: "admin@example.com"  # Email for Let's Encrypt notifications
+
+cloudflare:
+  apiToken: "your-cloudflare-api-token-here"  # API token for DNS-01 challenges
+
