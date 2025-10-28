@@ -34,9 +34,9 @@ func newPullCmd() *cobra.Command {
 
 			// Pull and validate
 			if pullForce {
-				fmt.Println("🔄 Force re-pulling stack...")
+				fmt.Fprintln(os.Stderr, "🔄 Force re-pulling stack...")
 				if err := os.RemoveAll(stackCacheDir); err != nil {
-					fmt.Printf("Warning: failed to remove cache: %v\n", err)
+					fmt.Fprintf(os.Stderr, "Warning: failed to remove cache: %v\n", err)
 				}
 			}
 
@@ -126,7 +126,7 @@ func repairCache(stackDir string) error {
 		return fmt.Errorf("not a git repository")
 	}
 
-	fmt.Println("🔧 Repairing cache...")
+	fmt.Fprintln(os.Stderr, "🔧 Repairing cache...")
 
 	// Reset to clean state
 	cmd := exec.Command("git", "-C", stackDir, "reset", "--hard", "HEAD")
@@ -140,14 +140,14 @@ func repairCache(stackDir string) error {
 		return fmt.Errorf("git clean failed: %w", err)
 	}
 
-	fmt.Println("✓ Cache repaired")
+	fmt.Fprintln(os.Stderr, "✓ Cache repaired")
 	return nil
 }
 
 // updateGitRepo updates an existing git repository to a specific version
 func updateGitRepo(dir, version string) error {
 	// Fetch latest
-	fmt.Println("Fetching updates...")
+	fmt.Fprintln(os.Stderr, "Fetching updates...")
 	cmd := exec.Command("git", "-C", dir, "fetch", "origin")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -207,18 +207,18 @@ func EnsureStackAvailable(source, version, stackDir string) error {
 	// Check if directory exists
 	if _, err := os.Stat(stackDir); os.IsNotExist(err) {
 		// Cache doesn't exist - clone it
-		fmt.Printf("📦 Pulling stack %s@%s...\n", source, version)
+		fmt.Fprintf(os.Stderr, "📦 Pulling stack %s@%s...\n", source, version)
 		if err := pullStack(source, version, stackDir); err != nil {
 			return fmt.Errorf("failed to pull stack: %w", err)
 		}
-		fmt.Println("✓ Stack pulled successfully")
+		fmt.Fprintln(os.Stderr, "✓ Stack pulled successfully")
 		return nil
 	}
 
 	// Cache exists - validate it
 	if !isGitRepo(stackDir) {
 		// Not a git repo (corrupted) - remove and re-clone
-		fmt.Println("⚠ Cache is not a git repository, re-pulling...")
+		fmt.Fprintln(os.Stderr, "⚠ Cache is not a git repository, re-pulling...")
 		if err := os.RemoveAll(stackDir); err != nil {
 			return fmt.Errorf("failed to remove invalid cache: %w", err)
 		}
@@ -229,8 +229,8 @@ func EnsureStackAvailable(source, version, stackDir string) error {
 	currentVersion, err := getCachedVersion(stackDir)
 	if err != nil {
 		// Can't determine version (corrupted) - re-clone
-		fmt.Printf("⚠ Cannot determine cache version: %v\n", err)
-		fmt.Println("⚠ Re-pulling stack...")
+		fmt.Fprintf(os.Stderr, "⚠ Cannot determine cache version: %v\n", err)
+		fmt.Fprintln(os.Stderr, "⚠ Re-pulling stack...")
 		if err := os.RemoveAll(stackDir); err != nil {
 			return fmt.Errorf("failed to remove invalid cache: %w", err)
 		}
@@ -241,12 +241,12 @@ func EnsureStackAvailable(source, version, stackDir string) error {
 	if currentVersion == version {
 		// Validate integrity
 		if !isValidCache(stackDir) {
-			fmt.Println("⚠ Cache is corrupted or has modifications")
+			fmt.Fprintln(os.Stderr, "⚠ Cache is corrupted or has modifications")
 			// Try to repair
 			if err := repairCache(stackDir); err != nil {
 				// Repair failed - re-clone
-				fmt.Printf("⚠ Repair failed: %v\n", err)
-				fmt.Println("⚠ Re-pulling stack...")
+				fmt.Fprintf(os.Stderr, "⚠ Repair failed: %v\n", err)
+				fmt.Fprintln(os.Stderr, "⚠ Re-pulling stack...")
 				if err := os.RemoveAll(stackDir); err != nil {
 					return fmt.Errorf("failed to remove invalid cache: %w", err)
 				}
@@ -254,16 +254,16 @@ func EnsureStackAvailable(source, version, stackDir string) error {
 			}
 		}
 
-		fmt.Printf("✓ Using cached stack %s\n", version)
+		fmt.Fprintf(os.Stderr, "✓ Using cached stack %s\n", version)
 		return nil
 	}
 
 	// Different version - switch to requested version
-	fmt.Printf("🔄 Switching cache from %s to %s...\n", currentVersion, version)
+	fmt.Fprintf(os.Stderr, "🔄 Switching cache from %s to %s...\n", currentVersion, version)
 	if err := updateGitRepo(stackDir, version); err != nil {
 		// Update failed - re-clone
-		fmt.Printf("⚠ Version switch failed: %v\n", err)
-		fmt.Println("⚠ Re-pulling stack...")
+		fmt.Fprintf(os.Stderr, "⚠ Version switch failed: %v\n", err)
+		fmt.Fprintln(os.Stderr, "⚠ Re-pulling stack...")
 		if err := os.RemoveAll(stackDir); err != nil {
 			return fmt.Errorf("failed to remove invalid cache: %w", err)
 		}
@@ -272,10 +272,10 @@ func EnsureStackAvailable(source, version, stackDir string) error {
 
 	// Validate after switching
 	if !isValidCache(stackDir) {
-		fmt.Println("⚠ Cache invalid after version switch")
+		fmt.Fprintln(os.Stderr, "⚠ Cache invalid after version switch")
 		if err := repairCache(stackDir); err != nil {
-			fmt.Printf("⚠ Repair failed: %v\n", err)
-			fmt.Println("⚠ Re-pulling stack...")
+			fmt.Fprintf(os.Stderr, "⚠ Repair failed: %v\n", err)
+			fmt.Fprintln(os.Stderr, "⚠ Re-pulling stack...")
 			if err := os.RemoveAll(stackDir); err != nil {
 				return fmt.Errorf("failed to remove invalid cache: %w", err)
 			}
@@ -283,6 +283,6 @@ func EnsureStackAvailable(source, version, stackDir string) error {
 		}
 	}
 
-	fmt.Println("✓ Cache switched and validated")
+	fmt.Fprintln(os.Stderr, "✓ Cache switched and validated")
 	return nil
 }
