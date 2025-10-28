@@ -83,7 +83,7 @@ func getDefaults(stackSource string, stackVersion string, clusterName string) er
 	if err != nil {
 		return err
 	}
-
+	fmt.Fprintf(os.Stderr, "# Default configuration values for stack %s@%s\n", stackSource, stackVersion)
 	fmt.Println(siteYaml)
 
 	return nil
