@@ -23,7 +23,7 @@ type Metadata struct {
 
 // Spec contains the main configuration specification
 type Spec struct {
-	Stack Stack `yaml:"stack,omitempty"`
+	Stack Stack `yaml:"stack"`
 	Infra Infra `yaml:"infra"`
 	Apps  Apps  `yaml:"apps"`
 }
@@ -86,7 +86,7 @@ type NodeConfig struct {
 
 // Apps defines application configuration
 type Apps struct {
-	Base    Base                 `yaml:"base"`
+	Stack   Stack                 `yaml:"stack",omitempty`
 	Catalog map[string]Component `yaml:"catalog"`
 }
 

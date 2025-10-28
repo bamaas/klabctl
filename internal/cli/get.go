@@ -2,9 +2,11 @@ package cli
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 
 	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
 )
 
 func newGetCmd() *cobra.Command {
@@ -85,4 +87,146 @@ func getDefaults(stackSource string, stackVersion string, clusterName string) er
 	fmt.Println(siteYaml)
 
 	return nil
+}
+
+// loadInfraDefaults loads the default infra values from the stack cache
+func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
+	valuesPath := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "infra", "templates", "values.yaml")
+
+	// Read the values file
+	data, err := os.ReadFile(valuesPath)
+	if err != nil {
+		// If values file doesn't exist, return empty map (backward compatibility)
+		return make(map[string]interface{}), nil
+	}
+
+	// Parse YAML
+	var values map[string]interface{}
+	if err := yaml.Unmarshal(data, &values); err != nil {
+		return nil, fmt.Errorf("failed to parse infra values: %w", err)
+	}
+
+	return values, nil
+}
+
+// loadAppDefaults loads default values for a specific app from the stack cache
+func loadAppDefaults(stackVersion, appName string) (map[string]interface{}, error) {
+	valuesPath := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "apps", appName, "templates", "values.yaml")
+
+	// Read the values file
+	data, err := os.ReadFile(valuesPath)
+	if err != nil {
+		// If values file doesn't exist, return empty map
+		return make(map[string]interface{}), nil
+	}
+
+	// Parse YAML
+	var values map[string]interface{}
+	if err := yaml.Unmarshal(data, &values); err != nil {
+		return nil, fmt.Errorf("failed to parse %s values: %w", appName, err)
+	}
+
+	return values, nil
+}
+
+// discoverAppsWithDefaults discovers all apps that have templates/values.yaml in the stack
+func discoverAppsWithDefaults(stackVersion string) ([]string, error) {
+	appsDir := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "apps")
+
+	var apps []string
+	entries, err := os.ReadDir(appsDir)
+	if err != nil {
+		// If apps directory doesn't exist, return empty list
+		return apps, nil
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		// Check if this app has a templates/values.yaml
+		valuesPath := filepath.Join(appsDir, entry.Name(), "templates", "values.yaml")
+		if _, err := os.Stat(valuesPath); err == nil {
+			apps = append(apps, entry.Name())
+		}
+	}
+
+	return apps, nil
+}
+
+// generateSiteYaml creates a basic site.yaml file
+func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string) (string, error) {
+	// Load infra defaults
+	infraDefaults, err := loadInfraDefaults(stackVersion)
+	if err != nil {
+		return "", fmt.Errorf("failed to load infra defaults: %w", err)
+	}
+
+	// Override cluster name
+	if cluster, ok := infraDefaults["cluster"].(map[string]interface{}); ok {
+		cluster["name"] = clusterName
+	}
+
+	// Discover all apps
+	discoveredApps, err := discoverAppsWithDefaults(stackVersion)
+	if err != nil {
+		return "", fmt.Errorf("failed to discover apps: %w", err)
+	}
+
+	// Build app catalog - all apps enabled by default
+	catalog := make(map[string]interface{})
+	for _, appName := range discoveredApps {
+		appDefaults, err := loadAppDefaults(stackVersion, appName)
+		if err != nil {
+			return "", fmt.Errorf("failed to load defaults for %s: %w", appName, err)
+		}
+
+		appConfig := map[string]interface{}{
+			"enabled": true,
+		}
+
+		if len(appDefaults) > 0 {
+			appConfig["values"] = appDefaults
+		}
+
+		catalog[appName] = appConfig
+	}
+
+	// Build site structure
+	spec := map[string]interface{}{
+		"stack": map[string]string{
+			"source":  stackSource,
+			"version": stackVersion,
+		},
+		"infra": infraDefaults,
+		"apps": map[string]interface{}{
+			"catalog": catalog,
+		},
+	}
+
+	site := map[string]interface{}{
+		"apiVersion": "klab/v1alpha1",
+		"kind":       "Site",
+		"metadata": map[string]string{
+			"name": clusterName,
+		},
+		"spec": spec,
+	}
+
+	data, err := yaml.Marshal(site)
+	if err != nil {
+		return "", fmt.Errorf("failed to marshal site.yaml: %w", err)
+	}
+
+	// If outputPath is empty return the data as a string
+	if outputPath == "" {
+		return string(data), nil
+	}
+
+	if err := os.WriteFile(outputPath, data, 0644); err != nil {
+		return "", fmt.Errorf("failed to write site.yaml: %w", err)
+	}
+
+	return "", nil
 }
