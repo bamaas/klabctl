@@ -31,7 +31,7 @@ type Spec struct {
 // Stack defines the stack source configuration
 type Stack struct {
 	Source  string `yaml:"source"`
-	Version string `yaml:"version"`
+	Ref 	string `yaml:"ref"`
 }
 
 // Infra defines infrastructure configuration

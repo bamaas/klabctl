@@ -6,18 +6,17 @@ import (
 	"path/filepath"
 
 	"github.com/spf13/cobra"
-	"gopkg.in/yaml.v3"
 )
 
 var (
-	stackSource  string
-	stackVersion string
+	stackSource string
+	stackRef    string
 )
 
 func newInitCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init <cluster-name>",
-		Short: "Initialize a new klabctl cluster",
+		Short: "Initialize a new cluster",
 		Long:  "Initialize a new cluster by pulling the stack and creating a cluster-specific site.yaml configuration",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -27,7 +26,7 @@ func newInitCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&stackSource, "stack-source", "https://github.com/bamaas/klabctl", "Git repository URL for the stack")
-	cmd.Flags().StringVar(&stackVersion, "stack-version", "main", "Stack version (branch, tag, or commit)")
+	cmd.Flags().StringVar(&stackRef, "stack-ref", "main", "Stack reference (branch, tag, or commit)")
 
 	return cmd
 }
@@ -37,6 +36,9 @@ func initProject(clusterName string) error {
 
 	// Create cluster directory: clusters/<cluster-name>/
 	clusterDir := filepath.Join("clusters", clusterName)
+	if _, err := os.Stat(clusterDir); err == nil {
+		return fmt.Errorf("cluster directory '%s' already exists", clusterDir)
+	}
 	if err := os.MkdirAll(clusterDir, 0755); err != nil {
 		return fmt.Errorf("failed to create cluster directory: %w", err)
 	}
@@ -47,36 +49,28 @@ func initProject(clusterName string) error {
 		return fmt.Errorf("cluster '%s' already exists (site.yaml found at %s)", clusterName, siteYamlPath)
 	}
 
-	// Create .klabctl directory structure at root
-	klabctlDir := ".klabctl"
-	cacheDir := filepath.Join(klabctlDir, "cache", "stack")
-
 	// Ensure stack is available using pull.go functionality
-	stackCacheDir := filepath.Join(cacheDir, stackVersion)
-	if err := EnsureStackAvailable(stackSource, stackVersion, stackCacheDir); err != nil {
+	if err := EnsureStackAvailable(stackSource, stackRef, false); err != nil {
 		return err
 	}
 
-	// Create .klabctl/config.yaml to track the stack version
-	configPath := filepath.Join(klabctlDir, "config.yaml")
-	if err := createKlabctlConfig(configPath, stackSource, stackVersion); err != nil {
-		return fmt.Errorf("failed to create klabctl config: %w", err)
-	}
-
 	// Generate site.yaml in cluster directory
-	fmt.Println("📝 Generating site.yaml...")
-	if _, err := generateSiteYaml(siteYamlPath, clusterName, stackSource, stackVersion); err != nil {
+	fmt.Println("Generating site.yaml...")
+	if _, err := generateSiteYaml(siteYamlPath, clusterName, stackSource, stackRef); err != nil {
 		return fmt.Errorf("failed to generate site.yaml: %w", err)
 	}
-
 	fmt.Printf("✓ Generated %s\n", siteYamlPath)
 
 	// Create .gitignore at root (only if it doesn't exist)
+	fmt.Println("Creating .gitignore...")
 	gitignorePath := ".gitignore"
-	if err := createGitignore(gitignorePath); err != nil {
+	created, err := createGitignore(gitignorePath)
+	if err != nil {
 		fmt.Printf("Warning: failed to create .gitignore: %v\n", err)
+	} else if created {
+		fmt.Printf("✓ Generated .gitignore at %s\n", gitignorePath)
 	} else {
-		fmt.Println("✓ Generated .gitignore")
+		fmt.Printf("✓ .gitignore already exists at %s\n", gitignorePath)
 	}
 
 	fmt.Println()
@@ -91,51 +85,21 @@ func initProject(clusterName string) error {
 	return nil
 }
 
-// createKlabctlConfig creates the .klabctl/config.yaml file
-func createKlabctlConfig(configPath, source, version string) error {
-	config := map[string]interface{}{
-		"stack": map[string]string{
-			"source":  source,
-			"version": version,
-		},
-	}
-
-	data, err := yaml.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return fmt.Errorf("failed to create config directory: %w", err)
-	}
-
-	if err := os.WriteFile(configPath, data, 0644); err != nil {
-		return fmt.Errorf("failed to write config file: %w", err)
-	}
-
-	return nil
-}
-
 // createGitignore creates a .gitignore file for the project
-func createGitignore(outputPath string) error {
+// Returns true if the file was created, false if it already existed, and any error
+func createGitignore(outputPath string) (bool, error) {
 	// Don't overwrite existing .gitignore
 	if _, err := os.Stat(outputPath); err == nil {
-		return nil
+		return false, nil
 	}
 
-	gitignoreContent := `# klabctl cache
-.klabctl/cache/
-
-# Generated manifests (optional - uncomment to gitignore generated files)
-# clusters/*/apps/*/generated/
-# clusters/*/apps/*/base/
-# clusters/*/infra/generated/
-# clusters/*/infra/base/
+	gitignoreContent := `
+.klabctl
 `
 
 	if err := os.WriteFile(outputPath, []byte(gitignoreContent), 0644); err != nil {
-		return fmt.Errorf("failed to write .gitignore: %w", err)
+		return false, err
 	}
 
-	return nil
+	return true, nil
 }

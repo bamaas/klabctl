@@ -11,7 +11,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var pullForce bool
+var (
+	pullForce         bool
+)
 
 func newPullCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -25,22 +27,11 @@ func newPullCmd() *cobra.Command {
 				return fmt.Errorf("failed to load site.yaml: %w", err)
 			}
 
-			if site.Spec.Stack.Source == "" || site.Spec.Stack.Version == "" {
-				return fmt.Errorf("stack.source and stack.version are required in site.yaml")
+			if site.Spec.Stack.Source == "" || site.Spec.Stack.Ref == "" {
+				return fmt.Errorf("stack.source and stack.ref are required in site.yaml")
 			}
 
-			// Determine cache directory
-			stackCacheDir := filepath.Join(".klabctl", "cache", "stack", site.Spec.Stack.Version)
-
-			// Pull and validate
-			if pullForce {
-				fmt.Fprintln(os.Stderr, "🔄 Force re-pulling stack...")
-				if err := os.RemoveAll(stackCacheDir); err != nil {
-					fmt.Fprintf(os.Stderr, "Warning: failed to remove cache: %v\n", err)
-				}
-			}
-
-			return EnsureStackAvailable(site.Spec.Stack.Source, site.Spec.Stack.Version, stackCacheDir)
+			return EnsureStackAvailable(site.Spec.Stack.Source, site.Spec.Stack.Ref, pullForce)
 		},
 	}
 
@@ -203,12 +194,23 @@ func pullStack(source, version, destDir string) error {
 
 // EnsureStackAvailable ensures the stack is cached and valid, pulling/repairing as needed
 // This is the main function that implements the "always validate" strategy
-func EnsureStackAvailable(source, version, stackDir string) error {
+func EnsureStackAvailable(source, ref string, force bool) error {
+	stackCacheDir := filepath.Join(".klabctl", "cache", "stack", ref)
+
+	// Handle force flag - remove cache if force is requested
+	if force {
+		fmt.Fprintln(os.Stderr, "Force re-pulling stack...")
+		if err := os.RemoveAll(stackCacheDir); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: failed to remove cache: %v\n", err)
+		}
+		// After force removal, proceed with normal flow (force is now done)
+	}
+
 	// Check if directory exists
-	if _, err := os.Stat(stackDir); os.IsNotExist(err) {
+	if _, err := os.Stat(stackCacheDir); os.IsNotExist(err) {
 		// Cache doesn't exist - clone it
-		fmt.Fprintf(os.Stderr, "📦 Pulling stack %s@%s...\n", source, version)
-		if err := pullStack(source, version, stackDir); err != nil {
+		fmt.Fprintf(os.Stderr, "📦 Pulling stack %s@%s...\n", source, ref)
+		if err := pullStack(source, ref, stackCacheDir); err != nil {
 			return fmt.Errorf("failed to pull stack: %w", err)
 		}
 		fmt.Fprintln(os.Stderr, "✓ Stack pulled successfully")
@@ -216,73 +218,94 @@ func EnsureStackAvailable(source, version, stackDir string) error {
 	}
 
 	// Cache exists - validate it
-	if !isGitRepo(stackDir) {
+	if !isGitRepo(stackCacheDir) {
 		// Not a git repo (corrupted) - remove and re-clone
 		fmt.Fprintln(os.Stderr, "⚠ Cache is not a git repository, re-pulling...")
-		if err := os.RemoveAll(stackDir); err != nil {
+		if err := os.RemoveAll(stackCacheDir); err != nil {
 			return fmt.Errorf("failed to remove invalid cache: %w", err)
 		}
-		return EnsureStackAvailable(source, version, stackDir)
+		return EnsureStackAvailable(source, ref, false)
 	}
 
 	// Check current version
-	currentVersion, err := getCachedVersion(stackDir)
+	currentRef, err := getCachedVersion(stackCacheDir)
 	if err != nil {
-		// Can't determine version (corrupted) - re-clone
-		fmt.Fprintf(os.Stderr, "⚠ Cannot determine cache version: %v\n", err)
+		// Can't determine ref (corrupted) - re-clone
+		fmt.Fprintf(os.Stderr, "⚠ Cannot determine cache ref: %v\n", err)
 		fmt.Fprintln(os.Stderr, "⚠ Re-pulling stack...")
-		if err := os.RemoveAll(stackDir); err != nil {
+		if err := os.RemoveAll(stackCacheDir); err != nil {
 			return fmt.Errorf("failed to remove invalid cache: %w", err)
 		}
-		return EnsureStackAvailable(source, version, stackDir)
+		return EnsureStackAvailable(source, ref, false)
 	}
 
 	// Already on correct version?
-	if currentVersion == version {
+	if currentRef == ref {
 		// Validate integrity
-		if !isValidCache(stackDir) {
+		if !isValidCache(stackCacheDir) {
 			fmt.Fprintln(os.Stderr, "⚠ Cache is corrupted or has modifications")
 			// Try to repair
-			if err := repairCache(stackDir); err != nil {
+			if err := repairCache(stackCacheDir); err != nil {
 				// Repair failed - re-clone
 				fmt.Fprintf(os.Stderr, "⚠ Repair failed: %v\n", err)
 				fmt.Fprintln(os.Stderr, "⚠ Re-pulling stack...")
-				if err := os.RemoveAll(stackDir); err != nil {
+				if err := os.RemoveAll(stackCacheDir); err != nil {
 					return fmt.Errorf("failed to remove invalid cache: %w", err)
 				}
-				return EnsureStackAvailable(source, version, stackDir)
+				return EnsureStackAvailable(source, ref, false)
 			}
 		}
 
-		fmt.Fprintf(os.Stderr, "✓ Using cached stack %s\n", version)
+		fmt.Fprintf(os.Stderr, "✓ Using cached stack %s\n", ref)
 		return nil
 	}
 
 	// Different version - switch to requested version
-	fmt.Fprintf(os.Stderr, "🔄 Switching cache from %s to %s...\n", currentVersion, version)
-	if err := updateGitRepo(stackDir, version); err != nil {
+	fmt.Fprintf(os.Stderr, "🔄 Switching cache from %s to %s...\n", currentRef, ref)
+	if err := updateGitRepo(stackCacheDir, ref); err != nil {
 		// Update failed - re-clone
 		fmt.Fprintf(os.Stderr, "⚠ Version switch failed: %v\n", err)
 		fmt.Fprintln(os.Stderr, "⚠ Re-pulling stack...")
-		if err := os.RemoveAll(stackDir); err != nil {
+		if err := os.RemoveAll(stackCacheDir); err != nil {
 			return fmt.Errorf("failed to remove invalid cache: %w", err)
 		}
-		return EnsureStackAvailable(source, version, stackDir)
+		return EnsureStackAvailable(source, ref, false)
 	}
 
 	// Validate after switching
-	if !isValidCache(stackDir) {
+	if !isValidCache(stackCacheDir) {
 		fmt.Fprintln(os.Stderr, "⚠ Cache invalid after version switch")
-		if err := repairCache(stackDir); err != nil {
+		if err := repairCache(stackCacheDir); err != nil {
 			fmt.Fprintf(os.Stderr, "⚠ Repair failed: %v\n", err)
 			fmt.Fprintln(os.Stderr, "⚠ Re-pulling stack...")
-			if err := os.RemoveAll(stackDir); err != nil {
+			if err := os.RemoveAll(stackCacheDir); err != nil {
 				return fmt.Errorf("failed to remove invalid cache: %w", err)
 			}
-			return EnsureStackAvailable(source, version, stackDir)
+			return EnsureStackAvailable(source, ref, false)
 		}
 	}
 
 	fmt.Fprintln(os.Stderr, "✓ Cache switched and validated")
+
 	return nil
 }
+
+// // createStackGitignore creates a .gitignore file for the stack cache directory
+// // Returns true if the file was created, false if it already existed, and any error
+// func createStackGitignore(outputPath string) (bool, error) {
+// 	// Don't overwrite existing .gitignore
+// 	if _, err := os.Stat(outputPath); err == nil {
+// 		return false, nil
+// 	}
+
+// 	gitignoreContent := `
+// # Created by klabctl - Ignore all files in the cache directory.
+// *
+// `
+
+// 	if err := os.WriteFile(outputPath, []byte(gitignoreContent), 0644); err != nil {
+// 		return false, err
+// 	}
+
+// 	return true, nil
+// }

@@ -23,7 +23,7 @@ type TemplateData struct {
 
 // getStackCacheDir returns the path to the cached stack directory
 func getStackCacheDir(site *config.Site) string {
-	return filepath.Join(".klabctl", "cache", "stack", site.Spec.Stack.Version)
+	return filepath.Join(".klabctl", "cache", "stack", site.Spec.Stack.Ref)
 }
 
 // getStackTemplatesDir returns the path to the stack templates directory in cache
@@ -362,13 +362,12 @@ func newRenderCmd() *cobra.Command {
 			}
 
 			// Ensure stack is available before rendering
-			if site.Spec.Stack.Source == "" || site.Spec.Stack.Version == "" {
+			if site.Spec.Stack.Source == "" || site.Spec.Stack.Ref == "" {
 				return fmt.Errorf("stack.source and stack.version are required in site.yaml")
 			}
 
-			stackCacheDir := getStackCacheDir(site)
 			fmt.Println("Ensuring stack is available...")
-			if err := EnsureStackAvailable(site.Spec.Stack.Source, site.Spec.Stack.Version, stackCacheDir); err != nil {
+			if err := EnsureStackAvailable(site.Spec.Stack.Source, site.Spec.Stack.Ref, false); err != nil {
 				return fmt.Errorf("failed to ensure stack is available: %w", err)
 			}
 

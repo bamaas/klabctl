@@ -27,7 +27,7 @@ func newGetCmd() *cobra.Command {
 func newGetDefaultsCmd() *cobra.Command {
 
 	var stackSource string
-	var stackVersion string
+	var stackRef string
 	var clusterName string
 
 	cmd := &cobra.Command{
@@ -60,21 +60,20 @@ Examples:
   klabctl get defaults -c production > clusters/production/site.yaml`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return getDefaults(stackSource, stackVersion, clusterName)
+			return getDefaults(stackSource, stackRef, clusterName)
 		},
 	}
 
 	cmd.Flags().StringVarP(&clusterName, "cluster-name", "n", "my-cluster", "Cluster name (default: my-cluster)")
 	cmd.Flags().StringVar(&stackSource, "stack-source", "https://github.com/bamaas/klabctl", "Stack git repository URL (default: https://github.com/bamaas/klabctl.git)")
-	cmd.Flags().StringVar(&stackVersion, "stack-version", "main", "Stack version/branch (default: main)")
+	cmd.Flags().StringVar(&stackRef, "stack-ref", "main", "Stack reference (version/branch/commit) (default: main)")
 
 	return cmd
 }
 
 func getDefaults(stackSource string, stackVersion string, clusterName string) error {
 	// Ensure stack is available
-	stackCacheDir := filepath.Join(".klabctl", "cache", "stack", stackVersion)
-	if err := EnsureStackAvailable(stackSource, stackVersion, stackCacheDir); err != nil {
+	if err := EnsureStackAvailable(stackSource, stackVersion, false); err != nil {
 		return fmt.Errorf("failed to ensure stack is available: %w", err)
 	}
 
@@ -130,8 +129,8 @@ func loadAppDefaults(stackVersion, appName string) (map[string]interface{}, erro
 }
 
 // discoverAppsWithDefaults discovers all apps that have templates/values.yaml in the stack
-func discoverAppsWithDefaults(stackVersion string) ([]string, error) {
-	appsDir := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "apps")
+func discoverAppsWithDefaults(stackRef string) ([]string, error) {
+	appsDir := filepath.Join(".klabctl", "cache", "stack", stackRef, "stack", "apps")
 
 	var apps []string
 	entries, err := os.ReadDir(appsDir)
@@ -156,9 +155,9 @@ func discoverAppsWithDefaults(stackVersion string) ([]string, error) {
 }
 
 // generateSiteYaml creates a basic site.yaml file
-func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string) (string, error) {
+func generateSiteYaml(outputPath, clusterName, stackSource, stackRef string) (string, error) {
 	// Load infra defaults
-	infraDefaults, err := loadInfraDefaults(stackVersion)
+	infraDefaults, err := loadInfraDefaults(stackRef)
 	if err != nil {
 		return "", fmt.Errorf("failed to load infra defaults: %w", err)
 	}
@@ -169,7 +168,7 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 	}
 
 	// Discover all apps
-	discoveredApps, err := discoverAppsWithDefaults(stackVersion)
+	discoveredApps, err := discoverAppsWithDefaults(stackRef)
 	if err != nil {
 		return "", fmt.Errorf("failed to discover apps: %w", err)
 	}
@@ -177,7 +176,7 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 	// Build app catalog - all apps enabled by default
 	catalog := make(map[string]interface{})
 	for _, appName := range discoveredApps {
-		appDefaults, err := loadAppDefaults(stackVersion, appName)
+		appDefaults, err := loadAppDefaults(stackRef, appName)
 		if err != nil {
 			return "", fmt.Errorf("failed to load defaults for %s: %w", appName, err)
 		}
@@ -196,8 +195,8 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackVersion string)
 	// Build site structure
 	spec := map[string]interface{}{
 		"stack": map[string]string{
-			"source":  stackSource,
-			"version": stackVersion,
+			"source": stackSource,
+			"ref":    stackRef,
 		},
 		"infra": infraDefaults,
 		"apps": map[string]interface{}{
