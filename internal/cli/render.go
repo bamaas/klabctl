@@ -12,6 +12,153 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func newGenerateCmd() *cobra.Command {
+
+	cmd := &cobra.Command{
+		Use:   "generate",
+		Short: "Generate cluster GitOps skeleton from site.yaml",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			site, err := config.LoadSiteFromFile(sitePath)
+			if err != nil {
+				return err
+			}
+
+			// Ensure stack is available before rendering
+			if site.Spec.Stack.Source == "" || site.Spec.Stack.Ref == "" {
+				return fmt.Errorf("stack.source and stack.version are required in site.yaml")
+			}
+
+			if err := EnsureStackAvailable(site.Spec.Stack.Source, site.Spec.Stack.Ref, false); err != nil {
+				return fmt.Errorf("failed to ensure stack is available: %w", err)
+			}
+
+			// Generate infrastructure if configured (check if provider is set)
+			if site.Spec.Infra.Provider.Name != "" {
+
+				// Copy infra base from cache
+				if err := copyInfraBase(site); err != nil {
+					return fmt.Errorf("failed to copy infra base: %w", err)
+				}
+
+				terraformDir := filepath.Join("clusters", site.Metadata.Name, "infra", "generated")
+				if err := os.MkdirAll(terraformDir, 0755); err != nil {
+					return fmt.Errorf("create terraform dir: %w", err)
+				}
+
+				if err := generateTerraformRoot(terraformDir, site); err != nil {
+					return fmt.Errorf("generate terraform root: %w", err)
+				}
+
+				// fmt.Printf("✓ Copied infra base from cache\n")
+				fmt.Printf("✓ Generated infrastructure configuration\n")
+			}
+
+			// Define path to components directory
+			appsPath := filepath.Join("clusters", site.Metadata.Name, "apps")
+
+			// Create components directory if it doesn't exist
+			if err := os.MkdirAll(appsPath, 0755); err != nil {
+				return fmt.Errorf("failed to create apps directory: %w", err)
+			}
+
+			// Render all templates for each component
+			renderedCount := 0
+			copiedCount := 0
+			for componentName, component := range site.Spec.Apps.Catalog {
+				if !component.Enabled {
+					continue // Skip disabled components
+				}
+
+				// Copy app base from cache to cluster directory
+				// fmt.Printf("Copying base for %s...\n", componentName)
+				if err := copyAppBase(site, componentName); err != nil {
+					return fmt.Errorf("failed to copy base for %s: %w", componentName, err)
+				}
+				copiedCount++
+
+				// Create component directory structure
+				componentPath := filepath.Join(appsPath, componentName)
+				generatedPath := filepath.Join(componentPath, "generated")
+				customPath := filepath.Join(componentPath, "custom")
+
+				if err := os.MkdirAll(generatedPath, 0755); err != nil {
+					return fmt.Errorf("failed to create generated directory for %s: %w", componentName, err)
+				}
+
+				// Create root kustomization.yaml (only if it doesn't exist)
+				rootKustomizationPath := filepath.Join(componentPath, "kustomization.yaml")
+				if _, err := os.Stat(rootKustomizationPath); os.IsNotExist(err) {
+					if err := createRootKustomization(site, componentName, rootKustomizationPath); err != nil {
+						return fmt.Errorf("failed to create root kustomization for %s: %w", componentName, err)
+					}
+					renderedCount++
+				}
+
+				// create custom/ directory if it doesn't exist
+				if err := os.MkdirAll(customPath, 0755); err != nil {
+					return fmt.Errorf("failed to create custom directory for %s: %w", componentName, err)
+				}
+
+				// create custom/values.yaml if it doesn't exist
+				customValuesPath := filepath.Join(customPath, "values.yaml")
+				if _, err := os.Stat(customValuesPath); os.IsNotExist(err) {
+					if err := createCustomValuesTemplate(site, customValuesPath); err != nil {
+						return fmt.Errorf("failed to create custom values template for %s: %w", componentName, err)
+					}
+				}
+
+				// Create custom kustomization.yaml if it doesn't exist
+				customKustomizationPath := filepath.Join(customPath, "kustomization.yaml")
+				if _, err := os.Stat(customKustomizationPath); os.IsNotExist(err) {
+					if err := createCustomKustomizationTemplate(site, customKustomizationPath); err != nil {
+						return fmt.Errorf("failed to create custom kustomization template for %s: %w", componentName, err)
+					}
+				}
+
+				// Find all templates for this component
+				componentTemplates, err := FindAppTemplates(site, componentName)
+				if err != nil {
+					return fmt.Errorf("failed to find templates for component %s: %w", componentName, err)
+				}
+
+				// Render generated/kustomization.yaml
+				generatedKustomizationPath := filepath.Join(generatedPath, "kustomization.yaml")
+
+				// If no app specific templates found, use base template
+				if len(componentTemplates) == 0 {
+					templateName := "base.kustomization.yaml.tmpl"
+					if err := RenderKustomizationTemplate(site, componentName, &component, templateName, generatedKustomizationPath); err != nil {
+						return fmt.Errorf("failed to render base template for component %s: %w", componentName, err)
+					}
+					renderedCount++
+					continue
+				}
+
+				// Render all app specific templates into generated/ directory
+				for _, templateName := range componentTemplates {
+					// Convert template name to output filename
+					// e.g., "apps/pihole/kustomization.yaml.tmpl" -> "kustomization.yaml"
+					// e.g., "apps/pihole/secret-patch.yaml.tmpl" -> "secret-patch.yaml"
+					baseName := filepath.Base(templateName)
+					outputFileName := strings.TrimSuffix(baseName, ".tmpl")
+					outputPath := filepath.Join(generatedPath, outputFileName)
+
+					if err := RenderTemplate(site, componentName, &component, templateName, outputPath); err != nil {
+						return fmt.Errorf("failed to render template %s for component %s: %w", templateName, componentName, err)
+					}
+					renderedCount++
+				}
+			}
+
+			// fmt.Printf("✓ Copied %d app base(s) from cache\n", copiedCount)
+			fmt.Printf("✓ Generated %d application components\n", renderedCount)
+			return nil
+		},
+	}
+
+	return cmd
+}
+
 // TemplateData holds the data used for templating
 type TemplateData struct {
 	Site          *config.Site
@@ -348,156 +495,6 @@ func FindAppTemplates(site *config.Site, componentName string) ([]string, error)
 	})
 
 	return componentTemplates, err
-}
-
-func newRenderCmd() *cobra.Command {
-
-	cmd := &cobra.Command{
-		Use:   "render",
-		Short: "Render cluster GitOps skeleton from site.yaml",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			site, err := config.LoadSiteFromFile(sitePath)
-			if err != nil {
-				return err
-			}
-
-			// Ensure stack is available before rendering
-			if site.Spec.Stack.Source == "" || site.Spec.Stack.Ref == "" {
-				return fmt.Errorf("stack.source and stack.version are required in site.yaml")
-			}
-
-			fmt.Println("Ensuring stack is available...")
-			if err := EnsureStackAvailable(site.Spec.Stack.Source, site.Spec.Stack.Ref, false); err != nil {
-				return fmt.Errorf("failed to ensure stack is available: %w", err)
-			}
-
-			// Generate infrastructure if configured (check if provider is set)
-			if site.Spec.Infra.Provider.Name != "" {
-				fmt.Println("Generating infrastructure...")
-
-				// Copy infra base from cache
-				fmt.Println("Copying infra base from cache...")
-				if err := copyInfraBase(site); err != nil {
-					return fmt.Errorf("failed to copy infra base: %w", err)
-				}
-
-				terraformDir := filepath.Join("clusters", site.Metadata.Name, "infra", "generated")
-				if err := os.MkdirAll(terraformDir, 0755); err != nil {
-					return fmt.Errorf("create terraform dir: %w", err)
-				}
-
-				if err := generateTerraformRoot(terraformDir, site); err != nil {
-					return fmt.Errorf("generate terraform root: %w", err)
-				}
-
-				fmt.Printf("✓ Copied infra base from cache\n")
-				fmt.Printf("✓ Generated Terraform root in %s\n", terraformDir)
-			}
-
-			// Define path to components directory
-			appsPath := filepath.Join("clusters", site.Metadata.Name, "apps")
-
-			// Create components directory if it doesn't exist
-			if err := os.MkdirAll(appsPath, 0755); err != nil {
-				return fmt.Errorf("failed to create apps directory: %w", err)
-			}
-
-			// Render all templates for each component
-			renderedCount := 0
-			copiedCount := 0
-			for componentName, component := range site.Spec.Apps.Catalog {
-				if !component.Enabled {
-					continue // Skip disabled components
-				}
-
-				// Copy app base from cache to cluster directory
-				fmt.Printf("Copying base for %s...\n", componentName)
-				if err := copyAppBase(site, componentName); err != nil {
-					return fmt.Errorf("failed to copy base for %s: %w", componentName, err)
-				}
-				copiedCount++
-
-				// Create component directory structure
-				componentPath := filepath.Join(appsPath, componentName)
-				generatedPath := filepath.Join(componentPath, "generated")
-				customPath := filepath.Join(componentPath, "custom")
-
-				if err := os.MkdirAll(generatedPath, 0755); err != nil {
-					return fmt.Errorf("failed to create generated directory for %s: %w", componentName, err)
-				}
-
-				// Create root kustomization.yaml (only if it doesn't exist)
-				rootKustomizationPath := filepath.Join(componentPath, "kustomization.yaml")
-				if _, err := os.Stat(rootKustomizationPath); os.IsNotExist(err) {
-					if err := createRootKustomization(site, componentName, rootKustomizationPath); err != nil {
-						return fmt.Errorf("failed to create root kustomization for %s: %w", componentName, err)
-					}
-					renderedCount++
-				}
-
-				// create custom/ directory if it doesn't exist
-				if err := os.MkdirAll(customPath, 0755); err != nil {
-					return fmt.Errorf("failed to create custom directory for %s: %w", componentName, err)
-				}
-
-				// create custom/values.yaml if it doesn't exist
-				customValuesPath := filepath.Join(customPath, "values.yaml")
-				if _, err := os.Stat(customValuesPath); os.IsNotExist(err) {
-					if err := createCustomValuesTemplate(site, customValuesPath); err != nil {
-						return fmt.Errorf("failed to create custom values template for %s: %w", componentName, err)
-					}
-				}
-
-				// Create custom kustomization.yaml if it doesn't exist
-				customKustomizationPath := filepath.Join(customPath, "kustomization.yaml")
-				if _, err := os.Stat(customKustomizationPath); os.IsNotExist(err) {
-					if err := createCustomKustomizationTemplate(site, customKustomizationPath); err != nil {
-						return fmt.Errorf("failed to create custom kustomization template for %s: %w", componentName, err)
-					}
-				}
-
-				// Find all templates for this component
-				componentTemplates, err := FindAppTemplates(site, componentName)
-				if err != nil {
-					return fmt.Errorf("failed to find templates for component %s: %w", componentName, err)
-				}
-
-				// Render generated/kustomization.yaml
-				generatedKustomizationPath := filepath.Join(generatedPath, "kustomization.yaml")
-
-				// If no app specific templates found, use base template
-				if len(componentTemplates) == 0 {
-					templateName := "base.kustomization.yaml.tmpl"
-					if err := RenderKustomizationTemplate(site, componentName, &component, templateName, generatedKustomizationPath); err != nil {
-						return fmt.Errorf("failed to render base template for component %s: %w", componentName, err)
-					}
-					renderedCount++
-					continue
-				}
-
-				// Render all app specific templates into generated/ directory
-				for _, templateName := range componentTemplates {
-					// Convert template name to output filename
-					// e.g., "apps/pihole/kustomization.yaml.tmpl" -> "kustomization.yaml"
-					// e.g., "apps/pihole/secret-patch.yaml.tmpl" -> "secret-patch.yaml"
-					baseName := filepath.Base(templateName)
-					outputFileName := strings.TrimSuffix(baseName, ".tmpl")
-					outputPath := filepath.Join(generatedPath, outputFileName)
-
-					if err := RenderTemplate(site, componentName, &component, templateName, outputPath); err != nil {
-						return fmt.Errorf("failed to render template %s for component %s: %w", templateName, componentName, err)
-					}
-					renderedCount++
-				}
-			}
-
-			fmt.Printf("\n✓ Copied %d app base(s) from cache\n", copiedCount)
-			fmt.Printf("✓ Rendered %d component kustomization files\n", renderedCount)
-			return nil
-		},
-	}
-
-	return cmd
 }
 
 // generateTerraformRoot generates Terraform root module files from site configuration

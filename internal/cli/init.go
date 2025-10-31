@@ -55,14 +55,14 @@ func initProject(clusterName string) error {
 	}
 
 	// Generate site.yaml in cluster directory
-	fmt.Println("Generating site.yaml...")
+	// fmt.Println("Generating site.yaml...")
 	if _, err := generateSiteYaml(siteYamlPath, clusterName, stackSource, stackRef); err != nil {
 		return fmt.Errorf("failed to generate site.yaml: %w", err)
 	}
 	fmt.Printf("✓ Generated %s\n", siteYamlPath)
 
 	// Create .gitignore at root (only if it doesn't exist)
-	fmt.Println("Creating .gitignore...")
+	// fmt.Println("Creating .gitignore...")
 	gitignorePath := ".gitignore"
 	created, err := createGitignore(gitignorePath)
 	if err != nil {
@@ -70,12 +70,12 @@ func initProject(clusterName string) error {
 	} else if created {
 		fmt.Printf("✓ Generated .gitignore at %s\n", gitignorePath)
 	} else {
-		fmt.Printf("✓ .gitignore already exists at %s\n", gitignorePath)
+		fmt.Printf("✓ .gitignore already exists")
 	}
 
 	fmt.Println()
-	fmt.Println("✨ Cluster initialized successfully!")
-	fmt.Println()
+	fmt.Println("\n✨ Cluster initialized successfully!")
+	fmt.Println("")
 	fmt.Println("Next steps:")
 	fmt.Printf("  1. Edit %s to configure your cluster\n", siteYamlPath)
 	fmt.Printf("  2. Run 'klabctl render --site %s' to generate manifests\n", siteYamlPath)
