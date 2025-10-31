@@ -13,6 +13,8 @@ import (
 
 var (
 	pullForce         bool
+	hiddenKlabctlDir  = filepath.Join(".klabctl")
+	stackCacheDirRoot = filepath.Join(hiddenKlabctlDir, "cache", "stack")
 )
 
 func newPullCmd() *cobra.Command {
@@ -38,6 +40,32 @@ func newPullCmd() *cobra.Command {
 	cmd.Flags().BoolVar(&pullForce, "force", false, "Force re-pull stack even if cached")
 
 	return cmd
+}
+
+func createHiddenKlabctlDir() error {
+	// Create hidden klabctl directory
+	if _, err := os.Stat(hiddenKlabctlDir); os.IsNotExist(err) {
+		if err := os.MkdirAll(hiddenKlabctlDir, 0755); err != nil {
+			return err
+		}
+	}
+
+	// Create .gitignore file
+	outputPath := filepath.Join(hiddenKlabctlDir, ".gitignore")
+	// Don't overwrite existing .gitignore
+	if _, err := os.Stat(outputPath); err == nil {
+		return nil
+	}
+
+	gitignoreContent := `# Created by klabctl - Ignore all files in the cache directory.
+*
+`
+
+	if err := os.WriteFile(outputPath, []byte(gitignoreContent), 0644); err != nil {
+		return fmt.Errorf("failed to create .gitignore: %w", err)
+	}
+
+	return nil
 }
 
 // isGitRepo checks if a directory is a git repository
@@ -195,7 +223,12 @@ func pullStack(source, version, destDir string) error {
 // EnsureStackAvailable ensures the stack is cached and valid, pulling/repairing as needed
 // This is the main function that implements the "always validate" strategy
 func EnsureStackAvailable(source, ref string, force bool) error {
-	stackCacheDir := filepath.Join(".klabctl", "cache", "stack", ref)
+
+	if err := createHiddenKlabctlDir(); err != nil {
+		return fmt.Errorf("failed to create %s directory: %w", hiddenKlabctlDir, err)
+	}
+
+	stackCacheDir := filepath.Join(stackCacheDirRoot, ref)
 
 	// Handle force flag - remove cache if force is requested
 	if force {
@@ -261,7 +294,7 @@ func EnsureStackAvailable(source, ref string, force bool) error {
 	}
 
 	// Different version - switch to requested version
-	fmt.Fprintf(os.Stderr, "🔄 Switching cache from %s to %s...\n", currentRef, ref)
+	fmt.Fprintf(os.Stderr, "Switching cache from %s to %s...\n", currentRef, ref)
 	if err := updateGitRepo(stackCacheDir, ref); err != nil {
 		// Update failed - re-clone
 		fmt.Fprintf(os.Stderr, "⚠ Version switch failed: %v\n", err)
@@ -289,23 +322,3 @@ func EnsureStackAvailable(source, ref string, force bool) error {
 
 	return nil
 }
-
-// // createStackGitignore creates a .gitignore file for the stack cache directory
-// // Returns true if the file was created, false if it already existed, and any error
-// func createStackGitignore(outputPath string) (bool, error) {
-// 	// Don't overwrite existing .gitignore
-// 	if _, err := os.Stat(outputPath); err == nil {
-// 		return false, nil
-// 	}
-
-// 	gitignoreContent := `
-// # Created by klabctl - Ignore all files in the cache directory.
-// *
-// `
-
-// 	if err := os.WriteFile(outputPath, []byte(gitignoreContent), 0644); err != nil {
-// 		return false, err
-// 	}
-
-// 	return true, nil
-// }

@@ -90,7 +90,7 @@ func getDefaults(stackSource string, stackVersion string, clusterName string) er
 
 // loadInfraDefaults loads the default infra values from the stack cache
 func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
-	valuesPath := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "infra", "templates", "values.yaml")
+	valuesPath := filepath.Join(stackCacheDirRoot, stackVersion, "infra", "templates", "values.yaml")
 
 	// Read the values file
 	data, err := os.ReadFile(valuesPath)
@@ -110,7 +110,7 @@ func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
 
 // loadAppDefaults loads default values for a specific app from the stack cache
 func loadAppDefaults(stackVersion, appName string) (map[string]interface{}, error) {
-	valuesPath := filepath.Join(".klabctl", "cache", "stack", stackVersion, "stack", "apps", appName, "templates", "values.yaml")
+	valuesPath := filepath.Join(stackCacheDirRoot, stackVersion, "stack", "apps", appName, "templates", "values.yaml")
 
 	// Read the values file
 	data, err := os.ReadFile(valuesPath)
@@ -130,7 +130,7 @@ func loadAppDefaults(stackVersion, appName string) (map[string]interface{}, erro
 
 // discoverAppsWithDefaults discovers all apps that have templates/values.yaml in the stack
 func discoverAppsWithDefaults(stackRef string) ([]string, error) {
-	appsDir := filepath.Join(".klabctl", "cache", "stack", stackRef, "stack", "apps")
+	appsDir := filepath.Join(stackCacheDirRoot, stackRef, "stack", "apps")
 
 	var apps []string
 	entries, err := os.ReadDir(appsDir)

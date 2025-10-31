@@ -93,9 +93,7 @@ func createGitignore(outputPath string) (bool, error) {
 		return false, nil
 	}
 
-	gitignoreContent := `
-.klabctl
-`
+	gitignoreContent := `.klabctl`
 
 	if err := os.WriteFile(outputPath, []byte(gitignoreContent), 0644); err != nil {
 		return false, err
