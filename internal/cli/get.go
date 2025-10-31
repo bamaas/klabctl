@@ -90,7 +90,7 @@ func getDefaults(stackSource string, stackVersion string, clusterName string) er
 
 // loadInfraDefaults loads the default infra values from the stack cache
 func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
-	valuesPath := filepath.Join(stackCacheDirRoot, stackVersion, "infra", "templates", "values.yaml")
+	valuesPath := filepath.Join(stackCacheDirRoot, stackVersion, "stack", "infra", "templates", "values.yaml")
 
 	// Read the values file
 	data, err := os.ReadFile(valuesPath)
@@ -108,24 +108,22 @@ func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
 	return values, nil
 }
 
-// loadAppDefaults loads default values for a specific app from the stack cache
-func loadAppDefaults(stackVersion, appName string) (map[string]interface{}, error) {
-	valuesPath := filepath.Join(stackCacheDirRoot, stackVersion, "stack", "apps", appName, "templates", "values.yaml")
+// loadYamlFile
+func loadYamlFile(path string) (map[string]interface{}, error) {
 
-	// Read the values file
-	data, err := os.ReadFile(valuesPath)
+	// Read the file
+	content, err := os.ReadFile(path)
 	if err != nil {
-		// If values file doesn't exist, return empty map
 		return make(map[string]interface{}), nil
 	}
 
-	// Parse YAML
-	var values map[string]interface{}
-	if err := yaml.Unmarshal(data, &values); err != nil {
-		return nil, fmt.Errorf("failed to parse %s values: %w", appName, err)
+	// Unmarshal the data into a map[string]interface{}
+	var yamlData map[string]interface{}
+	if err := yaml.Unmarshal(content, &yamlData); err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
 	}
 
-	return values, nil
+	return yamlData, nil
 }
 
 // discoverAppsWithDefaults discovers all apps that have templates/values.yaml in the stack
@@ -173,22 +171,37 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackRef string) (st
 		return "", fmt.Errorf("failed to discover apps: %w", err)
 	}
 
-	// Build app catalog - all apps enabled by default
+	// Load meta.yaml for each app
 	catalog := make(map[string]interface{})
 	for _, appName := range discoveredApps {
-		appDefaults, err := loadAppDefaults(stackRef, appName)
+		metaYamlPath := filepath.Join(stackCacheDirRoot, stackRef, "stack", "apps", appName, "templates", "meta.yaml")
+		meta, err := loadYamlFile(metaYamlPath)
+		if err != nil {
+			return "", fmt.Errorf("failed to load meta for %s: %w", appName, err)
+		}
+		catalog[appName] = meta
+	}
+
+	// Load values.yaml for each app
+	for _, appName := range discoveredApps {
+		valuesYamlPath := filepath.Join(stackCacheDirRoot, stackRef, "stack", "apps", appName, "templates", "values.yaml")
+		appDefaultValues, err := loadYamlFile(valuesYamlPath)
 		if err != nil {
 			return "", fmt.Errorf("failed to load defaults for %s: %w", appName, err)
 		}
 
-		appConfig := map[string]interface{}{
-			"enabled": true,
+		// Ensure appConfig exists and is a map[string]interface{}
+		appConfig, ok := catalog[appName].(map[string]interface{})
+		if !ok {
+			appConfig = make(map[string]interface{})
 		}
 
-		if len(appDefaults) > 0 {
-			appConfig["values"] = appDefaults
+		// If there are default values, set them
+		if len(appDefaultValues) > 0 {
+			appConfig["values"] = appDefaultValues
 		}
 
+		// Set the appConfig back in the catalog
 		catalog[appName] = appConfig
 	}
 
