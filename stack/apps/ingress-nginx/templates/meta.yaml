@@ -1,3 +1,4 @@
 ---
+enabled: true
 project: foundation
 namespace: kube-system
