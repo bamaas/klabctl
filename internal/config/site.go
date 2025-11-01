@@ -100,6 +100,8 @@ type Base struct {
 // Component defines a component configuration
 type Component struct {
 	Enabled bool                   `yaml:"enabled"`
+	Project string                 `yaml:"project"`
+	Namespace string               `yaml:"namespace"`
 	Values  map[string]interface{} `yaml:"values"`
 }
 

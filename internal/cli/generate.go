@@ -77,7 +77,15 @@ func newGenerateCmd() *cobra.Command {
 				copiedCount++
 
 				// Create component directory structure
-				componentPath := filepath.Join(appsPath, componentName)
+				project := site.Spec.Apps.Catalog[componentName].Project
+				namespace := site.Spec.Apps.Catalog[componentName].Namespace
+				if project == "" {
+					return fmt.Errorf("project is required for app %s", componentName)
+				}
+				if namespace == "" {
+					return fmt.Errorf("namespace is required for app %s", componentName)
+				}
+				componentPath := filepath.Join(appsPath, project, namespace, componentName)
 				generatedPath := filepath.Join(componentPath, "generated")
 				customPath := filepath.Join(componentPath, "custom")
 
@@ -528,7 +536,16 @@ func copyAppBase(site *config.Site, appName string) error {
 	}
 
 	// Destination: clusters/{site}/apps/{appName}/base
-	destPath := filepath.Join("clusters", site.Metadata.Name, "apps", appName, "base")
+	clusterName := site.Metadata.Name
+	project := site.Spec.Apps.Catalog[appName].Project
+	if project == "" {
+		return fmt.Errorf("project is required for app %s", appName)
+	}
+	namespace := site.Spec.Apps.Catalog[appName].Namespace
+	if namespace == "" {
+		return fmt.Errorf("namespace is required for app %s", appName)
+	}
+	destPath := filepath.Join("clusters", clusterName, "apps", project, namespace, appName, "base")
 
 	// Remove existing base directory
 	if err := os.RemoveAll(destPath); err != nil {
