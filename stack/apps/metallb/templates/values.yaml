@@ -1,5 +1,0 @@
----
-# Default values for metallb
-# These are merged into site.yaml during 'klabctl init'
-# MetalLB typically requires no custom values
-

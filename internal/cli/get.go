@@ -174,7 +174,7 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackRef string) (st
 	// Load meta.yaml for each app
 	catalog := make(map[string]interface{})
 	for _, appName := range discoveredApps {
-		metaYamlPath := filepath.Join(stackCacheDirRoot, stackRef, "stack", "apps", appName, "templates", "meta.yaml")
+		metaYamlPath := filepath.Join(stackCacheDirRoot, stackRef, "stack", "apps", appName, "meta.yaml")
 		meta, err := loadYamlFile(metaYamlPath)
 		if err != nil {
 			return "", fmt.Errorf("failed to load meta for %s: %w", appName, err)
@@ -184,7 +184,7 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackRef string) (st
 
 	// Load values.yaml for each app
 	for _, appName := range discoveredApps {
-		valuesYamlPath := filepath.Join(stackCacheDirRoot, stackRef, "stack", "apps", appName, "templates", "values.yaml")
+		valuesYamlPath := filepath.Join(stackCacheDirRoot, stackRef, "stack", "apps", appName, "values.yaml")
 		appDefaultValues, err := loadYamlFile(valuesYamlPath)
 		if err != nil {
 			return "", fmt.Errorf("failed to load defaults for %s: %w", appName, err)

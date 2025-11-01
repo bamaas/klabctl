@@ -1,4 +1,4 @@
 ---
 enabled: true
-project: foundation
+project: system
 namespace: cert-manager
