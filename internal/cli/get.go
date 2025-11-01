@@ -142,11 +142,7 @@ func discoverAppsWithDefaults(stackRef string) ([]string, error) {
 			continue
 		}
 
-		// Check if this app has a templates/values.yaml
-		valuesPath := filepath.Join(appsDir, entry.Name(), "templates", "values.yaml")
-		if _, err := os.Stat(valuesPath); err == nil {
-			apps = append(apps, entry.Name())
-		}
+		apps = append(apps, entry.Name())
 	}
 
 	return apps, nil
