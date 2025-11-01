@@ -68,6 +68,21 @@ func createHiddenKlabctlDir() error {
 	return nil
 }
 
+// getStackCacheDir returns the path to the cached stack directory
+func getStackCacheDir(site *config.Site) string {
+	return filepath.Join(stackCacheDirRoot, site.Spec.Stack.Ref)
+}
+
+// getStackTemplatesDir returns the path to the stack templates directory in cache
+func getStackTemplatesDir(site *config.Site) string {
+	return filepath.Join(getStackCacheDir(site), "stack", "templates")
+}
+
+// getStackAppsDir returns the path to the stack apps directory in cache
+func getStackAppsDir(site *config.Site) string {
+	return filepath.Join(getStackCacheDir(site), "stack", "apps")
+}
+
 // isGitRepo checks if a directory is a git repository
 func isGitRepo(dir string) bool {
 	gitDir := filepath.Join(dir, ".git")

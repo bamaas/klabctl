@@ -168,21 +168,6 @@ type TemplateData struct {
 	AllComponents map[string]config.Component
 }
 
-// getStackCacheDir returns the path to the cached stack directory
-func getStackCacheDir(site *config.Site) string {
-	return filepath.Join(".klabctl", "cache", "stack", site.Spec.Stack.Ref)
-}
-
-// getStackTemplatesDir returns the path to the stack templates directory in cache
-func getStackTemplatesDir(site *config.Site) string {
-	return filepath.Join(getStackCacheDir(site), "stack", "templates")
-}
-
-// getStackAppsDir returns the path to the stack apps directory in cache
-func getStackAppsDir(site *config.Site) string {
-	return filepath.Join(getStackCacheDir(site), "stack", "apps")
-}
-
 // readTemplateFromCache reads a template file from the cache
 func readTemplateFromCache(site *config.Site, templatePath string) ([]byte, error) {
 	// Check if it's an app-specific template (apps/{appName}/templates/{file})
