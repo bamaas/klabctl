@@ -4,30 +4,29 @@
 # Users can customize these values in their site.yaml
 
 # Provider configuration
+# The stack supports multiple providers. Users select ONE provider via 'name'
+# and configure only that provider's settings.
 provider:
-  # The currently active provider (references a key in 'providers')
-  active: proxmox
+  name: proxmox  # Options: proxmox, azure, aws (based on stack/infra/providers/)
   
-  # Available provider configurations
-  # Each provider can have multiple named instances (e.g., proxmox-prod, proxmox-staging)
-  providers:
-    proxmox:
-      endpoint: "https://pve.example.local:8006/api2/json"
-      tokenID: "root@pam!terraform"
-      # tokenSecret via env: TF_VAR_proxmox_token_secret
-    
-    # Example: Additional providers can be added here
-    # azure:
-    #   subscriptionId: "your-subscription-id"
-    #   tenantId: "your-tenant-id"
-    #   clientId: "your-client-id"
-    #   resourceGroup: "klab"
-    #   region: "westeurope"
-    #
-    # aws:
-    #   accessKeyId: "your-access-key"
-    #   region: "eu-central-1"
-    #   vpcId: "vpc-1234567890abcdef"
+  # Proxmox provider defaults (only used if name: proxmox)
+  proxmox:
+    endpoint: "https://pve.example.local:8006/api2/json"
+    tokenID: "root@pam!terraform"
+    # tokenSecret via env: TF_VAR_proxmox_token_secret
+  
+  # Azure provider defaults (only used if name: azure)
+  # azure:
+  #   subscriptionId: "your-subscription-id"
+  #   tenantId: "your-tenant-id"
+  #   clientId: "your-client-id"
+  #   resourceGroup: "klab"
+  #   region: "westeurope"
+  
+  # AWS provider defaults (only used if name: aws)
+  # aws:
+  #   region: "us-west-2"
+  #   accessKeyId: "your-access-key"
 
 # Talos image configuration (provider-agnostic)
 talosImage:
