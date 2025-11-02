@@ -1,0 +1,67 @@
+---
+# Default values for infrastructure configuration
+# These values are used by 'klabctl get defaults' and 'klabctl init' to generate site.yaml
+# Users can customize these values in their site.yaml
+
+# Provider configuration
+provider:
+  # The currently active provider (references a key in 'providers')
+  active: proxmox
+  
+  # Available provider configurations
+  # Each provider can have multiple named instances (e.g., proxmox-prod, proxmox-staging)
+  providers:
+    proxmox:
+      endpoint: "https://pve.example.local:8006/api2/json"
+      tokenID: "root@pam!terraform"
+      # tokenSecret via env: TF_VAR_proxmox_token_secret
+    
+    # Example: Additional providers can be added here
+    # azure:
+    #   subscriptionId: "your-subscription-id"
+    #   tenantId: "your-tenant-id"
+    #   clientId: "your-client-id"
+    #   resourceGroup: "klab"
+    #   region: "westeurope"
+    #
+    # aws:
+    #   accessKeyId: "your-access-key"
+    #   region: "eu-central-1"
+    #   vpcId: "vpc-1234567890abcdef"
+
+# Talos image configuration (provider-agnostic)
+talosImage:
+  url: "https://factory.talos.dev/image/abc123def456/v1.10.3/nocloud-amd64.iso"
+  fileName: "talos-1.10.3-nocloud-amd64.iso"
+  nodeName: "pve"
+  datastoreId: "local"
+  overwrite: false
+  contentType: "iso"
+
+# Node data configuration (provider-agnostic structure)
+nodeData:
+  controlPlanes:
+    - ip: "192.168.1.10"
+      hostname: "k8s-cp-1"
+      pveNode: "pve"
+      pveId: 5000
+      memory: 8192
+      cores: 4
+      diskSize: 40
+  workers:
+    - ip: "192.168.1.20"
+      hostname: "k8s-w-1"
+      pveNode: "pve"
+      pveId: 6000
+      memory: 16384
+      cores: 8
+      diskSize: 100
+
+# Cluster configuration (provider-agnostic)
+cluster:
+  name: "my-cluster"  # Will be replaced with actual cluster name
+  endpoint: "https://192.168.1.10:6443"
+  virtualSharedIp: "192.168.1.100"
+  domain: "cluster.local"
+  defaultGateway: "192.168.1.1"
+

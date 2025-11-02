@@ -1,0 +1,14 @@
+---
+# Proxmox-specific default values
+# These values are provider-specific and can be referenced when generating site.yaml
+# Users can customize these values in their site.yaml under spec.infra.provider.providers.proxmox
+
+# Proxmox provider configuration
+endpoint: "https://pve.example.local:8006/api2/json"
+tokenID: "root@pam!terraform"
+# tokenSecret must be provided via TF_VAR_proxmox_token_secret environment variable
+
+# Optional Proxmox-specific settings
+# datacenter: "dc1"
+# insecure: false
+# timeout: 300
