@@ -8,25 +8,6 @@
 # and configure only that provider's settings.
 provider:
   name: proxmox  # Options: proxmox, azure, aws (based on stack/infra/providers/)
-  
-  # Proxmox provider defaults (only used if name: proxmox)
-  proxmox:
-    endpoint: "https://pve.example.local:8006/api2/json"
-    tokenID: "root@pam!terraform"
-    # tokenSecret via env: TF_VAR_proxmox_token_secret
-  
-  # Azure provider defaults (only used if name: azure)
-  # azure:
-  #   subscriptionId: "your-subscription-id"
-  #   tenantId: "your-tenant-id"
-  #   clientId: "your-client-id"
-  #   resourceGroup: "klab"
-  #   region: "westeurope"
-  
-  # AWS provider defaults (only used if name: aws)
-  # aws:
-  #   region: "us-west-2"
-  #   accessKeyId: "your-access-key"
 
 # Talos image configuration (provider-agnostic)
 talosImage:
