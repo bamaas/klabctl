@@ -1,67 +1,48 @@
+{{- $cluster := index .ProviderConfig "cluster" -}}
+{{- $talosImage := index .ProviderConfig "talosImage" -}}
+{{- $nodeData := index .ProviderConfig "nodeData" -}}
+{{- $controlPlanes := index $nodeData "controlPlanes" -}}
+{{- $workers := index $nodeData "workers" -}}
 {
-  "default_gateway": "{{ .Site.Spec.Infra.Cluster.DefaultGateway }}",
-  "cluster_name": "{{ .Site.Spec.Infra.Cluster.Name }}",
-  "cluster_endpoint": "{{ .Site.Spec.Infra.Cluster.Endpoint }}",
-  "virtual_shared_ip": "{{ .Site.Spec.Infra.Cluster.VirtualSharedIp }}",
-  "cluster_domain": "{{ .Site.Spec.Infra.Cluster.Domain }}",
+  "default_gateway": "{{ index $cluster "defaultGateway" }}",
+  "cluster_name": "{{ index $cluster "name" }}",
+  "cluster_endpoint": "{{ index $cluster "endpoint" }}",
+  "virtual_shared_ip": "{{ index $cluster "virtualSharedIp" }}",
+  "cluster_domain": "{{ index $cluster "domain" }}",
   "talos_image": {
-    "url": "{{ .Site.Spec.Infra.TalosImage.URL }}",
-    "file_name": "{{ .Site.Spec.Infra.TalosImage.FileName }}",
-    "node_name": "{{ .Site.Spec.Infra.TalosImage.NodeName }}",
-    "datastore_id": "{{ .Site.Spec.Infra.TalosImage.DatastoreId }}",
-    "overwrite": {{ .Site.Spec.Infra.TalosImage.Overwrite }},
+    "url": "{{ index $talosImage "url" }}",
+    "file_name": "{{ index $talosImage "fileName" }}",
+    "node_name": "{{ index $talosImage "nodeName" }}",
+    "datastore_id": "{{ index $talosImage "datastoreId" }}",
+    "overwrite": {{ index $talosImage "overwrite" }},
     "content_type": "{{ .TalosImageContentType }}"
   },
   "node_data": {
     "controlplanes": {
-      {{- range $index, $node := .Site.Spec.Infra.NodeData.ControlPlanes }}
+      {{- range $index, $node := $controlPlanes }}
       {{ if $index }},{{ end }}
-      "{{ $node.IP }}": {
-        "ip": "{{ $node.IP }}",
-        "hostname": "{{ $node.Hostname }}",
-        "pve_node": "{{ $node.PveNode }}",
-        "pve_id": {{ $node.PveId }},
-        "memory": {{ $node.Memory }},
-        "cores": {{ $node.Cores }},
-        "disk_size": {{ $node.DiskSize }}
-        {{- if $node.InstallDisk }},
-        "install_disk": "{{ $node.InstallDisk }}"
-        {{- end }}
-        {{- if $node.StartOnBoot }},
-        "start_on_boot": {{ $node.StartOnBoot }}
-        {{- end }}
-        {{- if $node.NetworkBridge }},
-        "network_bridge": "{{ $node.NetworkBridge }}"
-        {{- end }}
-        {{- if $node.DatastoreId }},
-        "datastore_id": "{{ $node.DatastoreId }}"
-        {{- end }}
+      "{{ index $node "ip" }}": {
+        "ip": "{{ index $node "ip" }}",
+        "hostname": "{{ index $node "hostname" }}",
+        "pve_node": "{{ index $node "pveNode" }}",
+        "pve_id": {{ index $node "pveId" }},
+        "memory": {{ index $node "memory" }},
+        "cores": {{ index $node "cores" }},
+        "disk_size": {{ index $node "diskSize" }}
       }
       {{- end }}
     },
     "workers": {
-      {{- range $index, $node := .Site.Spec.Infra.NodeData.Workers }}
+      {{- range $index, $node := $workers }}
       {{ if $index }},{{ end }}
-      "{{ $node.IP }}": {
-        "ip": "{{ $node.IP }}",
-        "hostname": "{{ $node.Hostname }}",
-        "pve_node": "{{ $node.PveNode }}",
-        "pve_id": {{ $node.PveId }},
-        "memory": {{ $node.Memory }},
-        "cores": {{ $node.Cores }},
-        "disk_size": {{ $node.DiskSize }}
-        {{- if $node.InstallDisk }},
-        "install_disk": "{{ $node.InstallDisk }}"
-        {{- end }}
-        {{- if $node.StartOnBoot }},
-        "start_on_boot": {{ $node.StartOnBoot }}
-        {{- end }}
-        {{- if $node.NetworkBridge }},
-        "network_bridge": "{{ $node.NetworkBridge }}"
-        {{- end }}
-        {{- if $node.DatastoreId }},
-        "datastore_id": "{{ $node.DatastoreId }}"
-        {{- end }}
+      "{{ index $node "ip" }}": {
+        "ip": "{{ index $node "ip" }}",
+        "hostname": "{{ index $node "hostname" }}",
+        "pve_node": "{{ index $node "pveNode" }}",
+        "pve_id": {{ index $node "pveId" }},
+        "memory": {{ index $node "memory" }},
+        "cores": {{ index $node "cores" }},
+        "disk_size": {{ index $node "diskSize" }}
       }
       {{- end }}
     }

@@ -1,14 +1,44 @@
 ---
-# Proxmox-specific default values
-# These values are provider-specific and can be referenced when generating site.yaml
-# Users can customize these values in their site.yaml under spec.infra.provider.providers.proxmox
+# Proxmox Virtual Environment - Complete Configuration
+# This file contains all default values for Proxmox provider
 
-# Proxmox provider configuration
+# Proxmox API configuration
 endpoint: "https://pve.example.local:8006/api2/json"
 tokenID: "root@pam!terraform"
 # tokenSecret must be provided via TF_VAR_proxmox_token_secret environment variable
 
-# Optional Proxmox-specific settings
-# datacenter: "dc1"
-# insecure: false
-# timeout: 300
+# Talos Linux image configuration
+talosImage:
+  url: "https://factory.talos.dev/image/abc123def456/v1.10.3/nocloud-amd64.iso"
+  fileName: "talos-1.10.3-nocloud-amd64.iso"
+  nodeName: "pve"
+  datastoreId: "local"
+  overwrite: false
+  contentType: "iso"
+
+# Node configuration
+nodeData:
+  controlPlanes:
+    - ip: "192.168.1.10"
+      hostname: "k8s-cp-1"
+      pveNode: "pve"
+      pveId: 5000
+      memory: 8192
+      cores: 4
+      diskSize: 40
+  workers:
+    - ip: "192.168.1.20"
+      hostname: "k8s-w-1"
+      pveNode: "pve"
+      pveId: 6000
+      memory: 16384
+      cores: 8
+      diskSize: 100
+
+# Cluster configuration
+cluster:
+  name: "my-cluster"
+  endpoint: "https://192.168.1.10:6443"
+  virtualSharedIp: "192.168.1.100"
+  domain: "cluster.local"
+  defaultGateway: "192.168.1.1"
