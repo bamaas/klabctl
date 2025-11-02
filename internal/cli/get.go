@@ -89,8 +89,10 @@ func getDefaults(stackSource string, stackVersion string, clusterName string) er
 }
 
 // loadInfraDefaults loads the default infra values from the stack cache
+// It loads the default provider selection and ALL provider configurations
 func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
-	valuesPath := filepath.Join(stackCacheDirRoot, stackVersion, "stack", "infra", "templates", "values.yaml")
+	// Load default provider selection from stack/infra/values.yaml
+	valuesPath := filepath.Join(stackCacheDirRoot, stackVersion, "stack", "infra", "values.yaml")
 
 	// Read the values file
 	data, err := os.ReadFile(valuesPath)
@@ -99,13 +101,65 @@ func loadInfraDefaults(stackVersion string) (map[string]interface{}, error) {
 		return make(map[string]interface{}), nil
 	}
 
-	// Parse YAML
+	// Parse YAML to get default provider
 	var values map[string]interface{}
 	if err := yaml.Unmarshal(data, &values); err != nil {
 		return nil, fmt.Errorf("failed to parse infra values: %w", err)
 	}
 
-	return values, nil
+	// Discover all available providers
+	providersDir := filepath.Join(stackCacheDirRoot, stackVersion, "stack", "infra", "providers")
+	providers, err := discoverProviders(providersDir)
+	if err != nil {
+		// If no providers directory, return just the default provider selection
+		return values, nil
+	}
+
+	// Load configuration for ALL providers
+	allProviderConfigs := make(map[string]interface{})
+	for _, providerName := range providers {
+		providerValuesPath := filepath.Join(providersDir, providerName, "values.yaml")
+		providerData, err := os.ReadFile(providerValuesPath)
+		if err != nil {
+			// Skip providers without values.yaml
+			continue
+		}
+
+		// Parse provider-specific values
+		var providerValues map[string]interface{}
+		if err := yaml.Unmarshal(providerData, &providerValues); err != nil {
+			// Skip providers with invalid YAML
+			continue
+		}
+
+		allProviderConfigs[providerName] = providerValues
+	}
+
+	// Build result structure: { provider: "proxmox", providers: { proxmox: {...}, azure: {...}, ... } }
+	result := make(map[string]interface{})
+	if defaultProvider, ok := values["provider"].(string); ok {
+		result["provider"] = defaultProvider
+	}
+	result["providers"] = allProviderConfigs
+
+	return result, nil
+}
+
+// discoverProviders discovers all available providers in the providers directory
+func discoverProviders(providersDir string) ([]string, error) {
+	entries, err := os.ReadDir(providersDir)
+	if err != nil {
+		return nil, err
+	}
+
+	var providers []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			providers = append(providers, entry.Name())
+		}
+	}
+
+	return providers, nil
 }
 
 // loadYamlFile
@@ -154,11 +208,6 @@ func generateSiteYaml(outputPath, clusterName, stackSource, stackRef string) (st
 	infraDefaults, err := loadInfraDefaults(stackRef)
 	if err != nil {
 		return "", fmt.Errorf("failed to load infra defaults: %w", err)
-	}
-
-	// Override cluster name
-	if cluster, ok := infraDefaults["cluster"].(map[string]interface{}); ok {
-		cluster["name"] = clusterName
 	}
 
 	// Discover all apps

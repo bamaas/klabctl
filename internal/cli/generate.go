@@ -33,7 +33,7 @@ func newGenerateCmd() *cobra.Command {
 			}
 
 			// Generate infrastructure if configured (check if provider is set)
-			if site.Spec.Infra.Provider.Name != "" {
+			if site.Spec.Infra.Provider != "" {
 
 				// Copy infra base from cache
 				if err := copyInfraBase(site); err != nil {
@@ -495,20 +495,29 @@ func generateTerraformRoot(dir string, site *config.Site) error {
 	// Use local infra/base module
 	moduleSource := "../../base"
 
-	// Set default content type if not specified
-	contentType := site.Spec.Infra.TalosImage.ContentType
-	if contentType == "" {
-		contentType = "iso"
+	providerConfig, err := site.Spec.Infra.GetActiveProviderConfig()
+	if err != nil {
+		return fmt.Errorf("get active provider config: %w", err)
 	}
 
-	// Template data
+	// Set default content type if not specified
+	contentType := "iso"
+	if talosImage, ok := providerConfig["talosImage"].(map[string]interface{}); ok {
+		if ct, ok := talosImage["contentType"].(string); ok && ct != "" {
+			contentType = ct
+		}
+	}
+
+	// Template data - pass the active provider config
 	data := struct {
 		ModuleSource          string
 		Site                  *config.Site
+		ProviderConfig        map[string]interface{}
 		TalosImageContentType string
 	}{
 		ModuleSource:          moduleSource,
 		Site:                  site,
+		ProviderConfig:        providerConfig,
 		TalosImageContentType: contentType,
 	}
 
@@ -562,9 +571,15 @@ func copyAppBase(site *config.Site, appName string) error {
 
 // copyInfraBase copies infrastructure base from cache to cluster directory
 func copyInfraBase(site *config.Site) error {
-	// Determine the infra base path in cache
-	// For klabctl, it should be in stack/infra/base
-	sourcePath := filepath.Join(getStackCacheDir(site), "stack", "infra", "base")
+	// Determine the provider
+	providerName := site.Spec.Infra.Provider
+	if providerName == "" {
+		return fmt.Errorf("no provider specified")
+	}
+
+	// Determine the infra base path in cache for the provider
+	// Path: stack/infra/providers/{provider}/base
+	sourcePath := filepath.Join(getStackCacheDir(site), "stack", "infra", "providers", providerName, "base")
 
 	// Check if source exists
 	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
@@ -655,8 +670,14 @@ func copyFile(src, dst string) error {
 
 // renderInfraTemplate renders an infrastructure template to a file from cache
 func renderInfraTemplate(site *config.Site, templateName, outputPath string, data interface{}) error {
-	// Read template content from cache (infra templates are in stack/infra/templates/)
-	fullPath := filepath.Join(getStackCacheDir(site), "stack", "infra", "templates", templateName)
+	// Determine the provider
+	providerName := site.Spec.Infra.Provider
+	if providerName == "" {
+		return fmt.Errorf("no provider specified")
+	}
+
+	// Read template content from cache (infra templates are in stack/infra/providers/{provider}/templates/)
+	fullPath := filepath.Join(getStackCacheDir(site), "stack", "infra", "providers", providerName, "templates", templateName)
 	templateContent, err := os.ReadFile(fullPath)
 	if err != nil {
 		return fmt.Errorf("read template %s: %w", templateName, err)

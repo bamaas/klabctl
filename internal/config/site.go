@@ -2,7 +2,6 @@ package config
 
 import (
 	"fmt"
-	"io"
 	"os"
 
 	"gopkg.in/yaml.v3"
@@ -30,43 +29,36 @@ type Spec struct {
 
 // Stack defines the stack source configuration
 type Stack struct {
-	Source  string `yaml:"source"`
-	Ref 	string `yaml:"ref"`
+	Source string `yaml:"source"`
+	Ref    string `yaml:"ref"`
 }
 
 // Infra defines infrastructure configuration
 type Infra struct {
-	Base Base `yaml:"base"`
+	// Provider specifies which provider to use (e.g., "proxmox", "azure", "aws")
+	Provider string `yaml:"provider"`
 
-	Provider struct {
-		Name    string `yaml:"name"`
-		Proxmox struct {
-			Endpoint string `yaml:"endpoint"`
-			TokenID  string `yaml:"tokenID"`
-		} `yaml:"proxmox"`
-	} `yaml:"provider"`
+	// Providers contains all provider configurations
+	// Each provider has its own complete configuration including cluster, nodeData, etc.
+	Providers map[string]map[string]interface{} `yaml:"providers"`
+}
 
-	TalosImage struct {
-		URL         string `yaml:"url"`
-		FileName    string `yaml:"fileName"`
-		NodeName    string `yaml:"nodeName"`
-		DatastoreId string `yaml:"datastoreId"`
-		Overwrite   bool   `yaml:"overwrite"`
-		ContentType string `yaml:"contentType"`
-	} `yaml:"talosImage"`
+// GetActiveProviderConfig returns the configuration for the active provider
+func (i *Infra) GetActiveProviderConfig() (map[string]interface{}, error) {
+	if i.Provider == "" {
+		return nil, fmt.Errorf("no provider specified")
+	}
 
-	NodeData struct {
-		ControlPlanes []NodeConfig `yaml:"controlPlanes"`
-		Workers       []NodeConfig `yaml:"workers"`
-	} `yaml:"nodeData"`
+	if i.Providers == nil {
+		return nil, fmt.Errorf("no providers configured")
+	}
 
-	Cluster struct {
-		Name            string `yaml:"name"`
-		Endpoint        string `yaml:"endpoint"`
-		VirtualSharedIp string `yaml:"virtualSharedIp"`
-		Domain          string `yaml:"domain"`
-		DefaultGateway  string `yaml:"defaultGateway"`
-	} `yaml:"cluster"`
+	config, ok := i.Providers[i.Provider]
+	if !ok {
+		return nil, fmt.Errorf("provider '%s' not found in providers", i.Provider)
+	}
+
+	return config, nil
 }
 
 // NodeConfig defines configuration for a single node
@@ -86,7 +78,7 @@ type NodeConfig struct {
 
 // Apps defines application configuration
 type Apps struct {
-	Stack   Stack                 `yaml:"stack",omitempty`
+	Stack   Stack                `yaml:"stack,omitempty"`
 	Catalog map[string]Component `yaml:"catalog"`
 }
 
@@ -99,10 +91,10 @@ type Base struct {
 
 // Component defines a component configuration
 type Component struct {
-	Enabled bool                   `yaml:"enabled"`
-	Project string                 `yaml:"project"`
-	Namespace string               `yaml:"namespace"`
-	Values  map[string]interface{} `yaml:"values"`
+	Enabled   bool                   `yaml:"enabled"`
+	Project   string                 `yaml:"project"`
+	Namespace string                 `yaml:"namespace"`
+	Values    map[string]interface{} `yaml:"values"`
 }
 
 // ParseSite parses a YAML byte slice into a Site struct
@@ -125,19 +117,4 @@ func LoadSiteFromFile(filename string) (*Site, error) {
 	}
 
 	return ParseSite(data)
-}
-
-// LoadSiteFromReader loads and parses a site configuration from an io.Reader
-func LoadSiteFromReader(reader io.Reader) (*Site, error) {
-	data, err := io.ReadAll(reader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read from reader: %w", err)
-	}
-
-	return ParseSite(data)
-}
-
-// ToYAML converts a Site struct back to YAML format
-func (s *Site) ToYAML() ([]byte, error) {
-	return yaml.Marshal(s)
 }

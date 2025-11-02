@@ -21,8 +21,8 @@ func newProvisionInfraCmd() *cobra.Command {
 				return fmt.Errorf("load site: %w", err)
 			}
 
-			if site.Spec.Infra.Base.Source == "" {
-				return fmt.Errorf("no infrastructure configured in site.yaml")
+			if site.Spec.Infra.Provider == "" {
+				return fmt.Errorf("no infrastructure provider configured in site.yaml")
 			}
 
 			name := site.Metadata.Name
