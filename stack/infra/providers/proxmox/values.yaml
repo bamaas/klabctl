@@ -37,7 +37,6 @@ nodeData:
 
 # Cluster configuration
 cluster:
-  name: "my-cluster"
   endpoint: "https://192.168.1.10:6443"
   virtualSharedIp: "192.168.1.100"
   domain: "cluster.local"
