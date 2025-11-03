@@ -1,0 +1,11 @@
+{{- template "base" . }}
+
+# Set cluster name
+patches:
+  - target:
+      kind: Secret
+      name: argocd-cluster-name
+    patch: |-
+      - op: add
+        path: /stringData/name
+        value: {{ .Site.Name }}

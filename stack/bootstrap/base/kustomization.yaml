@@ -2,5 +2,5 @@
 resources:
   - project.yaml
   - cluster-name.yaml
-  - appset-bootstrap.yaml
+  - appset-bootstrap-system.yaml
   - appset-bootstrap-apps.yaml
