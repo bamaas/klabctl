@@ -15,7 +15,7 @@
     "node_name": "{{ index $talosImage "nodeName" }}",
     "datastore_id": "{{ index $talosImage "datastoreId" }}",
     "overwrite": {{ index $talosImage "overwrite" }},
-    "content_type": "{{ .TalosImageContentType }}"
+    "content_type": "{{  index $talosImage "contentType" }}"
   },
   "node_data": {
     "controlplanes": {

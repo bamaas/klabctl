@@ -3,7 +3,7 @@ locals {
 }
 
 module "homelab_infra" {
-  source = "{{ .ModuleSource }}"
+  source = "../base"
 
   default_gateway   = local.tfvars.default_gateway
   cluster_name      = local.tfvars.cluster_name
