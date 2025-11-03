@@ -5,7 +5,7 @@
 {{- $workers := index $nodeData "workers" -}}
 {
   "default_gateway": "{{ index $cluster "defaultGateway" }}",
-  "cluster_name": "{{ index $cluster "name" }}",
+  "cluster_name": "{{ Site.Name }}",
   "cluster_endpoint": "{{ index $cluster "endpoint" }}",
   "virtual_shared_ip": "{{ index $cluster "virtualSharedIp" }}",
   "cluster_domain": "{{ index $cluster "domain" }}",
