@@ -1,7 +1,7 @@
 {{- template "base" . }}
 
-# Set cluster name
 patches:
+  # Set cluster name
   - target:
       kind: Secret
       name: argocd-cluster-name
@@ -9,3 +9,46 @@ patches:
       - op: add
         path: /stringData/name
         value: {{ .Site.Name }}
+
+  # Override appset-bootstrap-system generator directories
+  - target:
+      kind: ApplicationSet
+      name: bootstrap-system
+    patch: |-
+      - op: replace
+        path: /spec/generators/0/git/directories
+        value:
+          - path: 'bootstrap/{{ .Site.Name }}/projects'
+          - path: 'bootstrap/{{ .Site.Name }}/resources'
+          - path: 'bootstrap/{{ .Site.Name }}/misc'
+
+      - op: replace
+        path: /spec/generators/0/git/repoURL
+        value: {{ .Site.Stack.Source }}
+
+  # Override appset-bootstrap-apps generator directories
+  - target:
+      kind: ApplicationSet
+      name: bootstrap-apps
+    patch: |-
+      - op: replace
+        path: /spec/generators/0/git/directories
+        value:
+          - path: 'apps/{{ .Site.Name }}/*/*/*'
+
+      - op: replace
+        path: /spec/generators/0/git/repoURL
+        value: {{ .Site.Stack.Source }}
+
+      - op: replace
+        path: /spec/template/spec/source/repoURL
+        value: {{ .Site.Stack.Source }}
+
+  # Override the project source
+  - target:
+      kind: AppProject
+      name: argocd-system
+    patch: |-
+      - op: replace
+        path: /spec/sourceRepos/0
+        value: {{ .Site.Stack.Source }}
