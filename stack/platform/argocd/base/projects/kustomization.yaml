@@ -1,0 +1,5 @@
+---
+resources:
+  - platform.yaml
+  - system.yaml
+  - apps.yaml
