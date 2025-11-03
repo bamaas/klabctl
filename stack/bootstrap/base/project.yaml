@@ -1,0 +1,23 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: argocd-system
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  description: Apps that manage the ArgoCD system
+  sourceRepos:
+    - 'https://github.com/bamaas/HomeLab-2.0'
+  sourceNamespaces:
+    - 'argocd'
+  destinations:
+    - namespace: 'argocd'
+      server: 'https://kubernetes.default.svc'
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

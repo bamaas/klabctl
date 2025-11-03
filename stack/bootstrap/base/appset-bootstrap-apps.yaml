@@ -1,0 +1,37 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: ApplicationSet
+metadata:
+  name: appset-bootstrap
+  namespace: argocd
+spec:
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - git:
+        repoURL: https://github.com/bamaas/HomeLab-2.0
+        revision: main
+        directories:
+          - path: 'apps/${ENV}/*/*/*'
+  template:
+    metadata:
+      name: '{{ .path.basename }}'
+    spec:
+      project: '{{ index .path.segments 2 }}'
+      source:
+        repoURL: https://github.com/bamaas/HomeLab-2.0
+        targetRevision: main
+        path: '{{.path.path}}'
+        plugin:
+          name: cmp-sops-decrypt
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: '{{ index .path.segments 3 }}'
+      syncPolicy:
+        automated:
+          prune: true
+          selfHeal: true
+          allowEmpty: true
+        syncOptions:
+          - CreateNamespace=true
+          - ServerSideApply=true
