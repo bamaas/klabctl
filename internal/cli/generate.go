@@ -492,33 +492,19 @@ func FindAppTemplates(site *config.Site, componentName string) ([]string, error)
 
 // generateTerraformRoot generates Terraform root module files from site configuration
 func generateTerraformRoot(dir string, site *config.Site) error {
-	// Use local infra/base module
-	moduleSource := "../../base"
 
 	providerConfig, err := site.Spec.Infra.GetActiveProviderConfig()
 	if err != nil {
 		return fmt.Errorf("get active provider config: %w", err)
 	}
 
-	// Set default content type if not specified
-	contentType := "iso"
-	if talosImage, ok := providerConfig["talosImage"].(map[string]interface{}); ok {
-		if ct, ok := talosImage["contentType"].(string); ok && ct != "" {
-			contentType = ct
-		}
-	}
-
 	// Template data - pass the active provider config
 	data := struct {
-		ModuleSource          string
 		Site                  *config.Site
 		ProviderConfig        map[string]interface{}
-		TalosImageContentType string
 	}{
-		ModuleSource:          moduleSource,
 		Site:                  site,
 		ProviderConfig:        providerConfig,
-		TalosImageContentType: contentType,
 	}
 
 	// Render main.tf
