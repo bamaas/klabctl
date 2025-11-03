@@ -2,4 +2,8 @@
 
 ## To do
 
-[ ] How to handle situation when rendering but base is not vendered.
+[ ] Create struct for meta.yaml
+
+[ ] Improve copyAppBase to re-use same logic to copy custom and generated dirs
+
+[ ] Update generateTerraformRoot function
