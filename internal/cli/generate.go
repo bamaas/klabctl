@@ -33,138 +33,158 @@ func newGenerateCmd() *cobra.Command {
 			}
 
 			// Generate infrastructure if configured (check if provider is set)
-			if site.Spec.Infra.Provider != "" {
-
-				// Copy infra base from cache
-				if err := copyInfraBase(site); err != nil {
-					return fmt.Errorf("failed to copy infra base: %w", err)
-				}
-
-				terraformDir := filepath.Join("clusters", site.Metadata.Name, "infra", "generated")
-				if err := os.MkdirAll(terraformDir, 0755); err != nil {
-					return fmt.Errorf("create terraform dir: %w", err)
-				}
-
-				if err := generateTerraformRoot(terraformDir, site); err != nil {
-					return fmt.Errorf("generate terraform root: %w", err)
-				}
-
-				// fmt.Printf("✓ Copied infra base from cache\n")
-				fmt.Printf("✓ Generated infrastructure configuration\n")
+			if err := generateInfraManifests(site); err != nil {
+				return fmt.Errorf("failed to generate infrastructure manifests: %w", err)
 			}
+			fmt.Printf("✓ Generated infrastructure configuration\n")
 
-			// Define path to components directory
-			appsPath := filepath.Join("clusters", site.Metadata.Name, "apps")
-
-			// Create components directory if it doesn't exist
-			if err := os.MkdirAll(appsPath, 0755); err != nil {
-				return fmt.Errorf("failed to create apps directory: %w", err)
+			// Generate applications
+			renderedCount, err := generateAppManifests(site)
+			if err != nil {
+				return fmt.Errorf("generate apps: %w", err)
 			}
-
-			// Render all templates for each component
-			renderedCount := 0
-			copiedCount := 0
-			for componentName, component := range site.Spec.Apps.Catalog {
-				if !component.Enabled {
-					continue // Skip disabled components
-				}
-
-				// Copy app base from cache to cluster directory
-				// fmt.Printf("Copying base for %s...\n", componentName)
-				if err := copyAppBase(site, componentName); err != nil {
-					return fmt.Errorf("failed to copy base for %s: %w", componentName, err)
-				}
-				copiedCount++
-
-				// Create component directory structure
-				project := site.Spec.Apps.Catalog[componentName].Project
-				namespace := site.Spec.Apps.Catalog[componentName].Namespace
-				if project == "" {
-					return fmt.Errorf("project is required for app %s", componentName)
-				}
-				if namespace == "" {
-					return fmt.Errorf("namespace is required for app %s", componentName)
-				}
-				componentPath := filepath.Join(appsPath, project, namespace, componentName)
-				generatedPath := filepath.Join(componentPath, "generated")
-				customPath := filepath.Join(componentPath, "custom")
-
-				if err := os.MkdirAll(generatedPath, 0755); err != nil {
-					return fmt.Errorf("failed to create generated directory for %s: %w", componentName, err)
-				}
-
-				// Create root kustomization.yaml (only if it doesn't exist)
-				rootKustomizationPath := filepath.Join(componentPath, "kustomization.yaml")
-				if _, err := os.Stat(rootKustomizationPath); os.IsNotExist(err) {
-					if err := createRootKustomization(site, componentName, rootKustomizationPath); err != nil {
-						return fmt.Errorf("failed to create root kustomization for %s: %w", componentName, err)
-					}
-					renderedCount++
-				}
-
-				// create custom/ directory if it doesn't exist
-				if err := os.MkdirAll(customPath, 0755); err != nil {
-					return fmt.Errorf("failed to create custom directory for %s: %w", componentName, err)
-				}
-
-				// create custom/values.yaml if it doesn't exist
-				customValuesPath := filepath.Join(customPath, "values.yaml")
-				if _, err := os.Stat(customValuesPath); os.IsNotExist(err) {
-					if err := createCustomValuesTemplate(site, customValuesPath); err != nil {
-						return fmt.Errorf("failed to create custom values template for %s: %w", componentName, err)
-					}
-				}
-
-				// Create custom kustomization.yaml if it doesn't exist
-				customKustomizationPath := filepath.Join(customPath, "kustomization.yaml")
-				if _, err := os.Stat(customKustomizationPath); os.IsNotExist(err) {
-					if err := createCustomKustomizationTemplate(site, customKustomizationPath); err != nil {
-						return fmt.Errorf("failed to create custom kustomization template for %s: %w", componentName, err)
-					}
-				}
-
-				// Find all templates for this component
-				componentTemplates, err := FindAppTemplates(site, componentName)
-				if err != nil {
-					return fmt.Errorf("failed to find templates for component %s: %w", componentName, err)
-				}
-
-				// Render generated/kustomization.yaml
-				generatedKustomizationPath := filepath.Join(generatedPath, "kustomization.yaml")
-
-				// If no app specific templates found, use base template
-				if len(componentTemplates) == 0 {
-					templateName := "base.kustomization.yaml.tmpl"
-					if err := RenderKustomizationTemplate(site, componentName, &component, templateName, generatedKustomizationPath); err != nil {
-						return fmt.Errorf("failed to render base template for component %s: %w", componentName, err)
-					}
-					renderedCount++
-					continue
-				}
-
-				// Render all app specific templates into generated/ directory
-				for _, templateName := range componentTemplates {
-					// Convert template name to output filename
-					// e.g., "apps/pihole/kustomization.yaml.tmpl" -> "kustomization.yaml"
-					// e.g., "apps/pihole/secret-patch.yaml.tmpl" -> "secret-patch.yaml"
-					baseName := filepath.Base(templateName)
-					outputFileName := strings.TrimSuffix(baseName, ".tmpl")
-					outputPath := filepath.Join(generatedPath, outputFileName)
-
-					if err := RenderTemplate(site, componentName, &component, templateName, outputPath); err != nil {
-						return fmt.Errorf("failed to render template %s for component %s: %w", templateName, componentName, err)
-					}
-					renderedCount++
-				}
-			}
-
-			// fmt.Printf("✓ Copied %d app base(s) from cache\n", copiedCount)
 			fmt.Printf("✓ Generated %d application components\n", renderedCount)
+
 			return nil
 		},
 	}
 
 	return cmd
+}
+
+// generateInfraManifests generates all infrastructure manifests from site configuration
+func generateInfraManifests(site *config.Site) error {
+
+	// Fail fast, check if infrastructure provider is not configured
+	if site.Spec.Infra.Provider == "" {
+		return fmt.Errorf("no infrastructure provider configured in site.yaml")
+	}
+
+	// Copy infra base from cache
+	if err := copyInfraBase(site); err != nil {
+		return fmt.Errorf("failed to copy infra base: %w", err)
+	}
+
+	terraformDir := filepath.Join("clusters", site.Metadata.Name, "infra", "generated")
+	if err := os.MkdirAll(terraformDir, 0755); err != nil {
+		return fmt.Errorf("create terraform dir: %w", err)
+	}
+
+	if err := generateTerraformRoot(terraformDir, site); err != nil {
+		return fmt.Errorf("generate terraform root: %w", err)
+	}
+
+	return nil
+}
+
+// generateApps generates all application components from site configuration
+func generateAppManifests(site *config.Site) (int, error) {
+	// Define path to components directory
+	appsPath := filepath.Join("clusters", site.Metadata.Name, "apps")
+
+	renderedCount := 0
+
+	// Create components directory if it doesn't exist
+	if err := os.MkdirAll(appsPath, 0755); err != nil {
+		return renderedCount, fmt.Errorf("failed to create apps directory: %w", err)
+	}
+
+	// Render all templates for each component
+	copiedCount := 0
+	for componentName, component := range site.Spec.Apps.Catalog {
+		if !component.Enabled {
+			continue // Skip disabled components
+		}
+
+		// Copy app base from cache to cluster directory
+		// fmt.Printf("Copying base for %s...\n", componentName)
+		if err := copyAppBase(site, componentName); err != nil {
+			return renderedCount, fmt.Errorf("failed to copy base for %s: %w", componentName, err)
+		}
+		copiedCount++
+
+		// Create component directory structure
+		project := site.Spec.Apps.Catalog[componentName].Project
+		namespace := site.Spec.Apps.Catalog[componentName].Namespace
+		if project == "" {
+			return renderedCount, fmt.Errorf("project is required for app %s", componentName)
+		}
+		if namespace == "" {
+			return renderedCount, fmt.Errorf("namespace is required for app %s", componentName)
+		}
+		componentPath := filepath.Join(appsPath, project, namespace, componentName)
+		generatedPath := filepath.Join(componentPath, "generated")
+		customPath := filepath.Join(componentPath, "custom")
+
+		if err := os.MkdirAll(generatedPath, 0755); err != nil {
+			return renderedCount, fmt.Errorf("failed to create generated directory for %s: %w", componentName, err)
+		}
+
+		// Create root kustomization.yaml (only if it doesn't exist)
+		rootKustomizationPath := filepath.Join(componentPath, "kustomization.yaml")
+		if _, err := os.Stat(rootKustomizationPath); os.IsNotExist(err) {
+			if err := createRootKustomization(site, componentName, rootKustomizationPath); err != nil {
+				return renderedCount, fmt.Errorf("failed to create root kustomization for %s: %w", componentName, err)
+			}
+			renderedCount++
+		}
+
+		// create custom/ directory if it doesn't exist
+		if err := os.MkdirAll(customPath, 0755); err != nil {
+			return renderedCount, fmt.Errorf("failed to create custom directory for %s: %w", componentName, err)
+		}
+
+		// create custom/values.yaml if it doesn't exist
+		customValuesPath := filepath.Join(customPath, "values.yaml")
+		if _, err := os.Stat(customValuesPath); os.IsNotExist(err) {
+			if err := createCustomValuesTemplate(site, customValuesPath); err != nil {
+				return renderedCount, fmt.Errorf("failed to create custom values template for %s: %w", componentName, err)
+			}
+		}
+
+		// Create custom kustomization.yaml if it doesn't exist
+		customKustomizationPath := filepath.Join(customPath, "kustomization.yaml")
+		if _, err := os.Stat(customKustomizationPath); os.IsNotExist(err) {
+			if err := createCustomKustomizationTemplate(site, customKustomizationPath); err != nil {
+				return renderedCount, fmt.Errorf("failed to create custom kustomization template for %s: %w", componentName, err)
+			}
+		}
+
+		// Find all templates for this component
+		componentTemplates, err := FindAppTemplates(site, componentName)
+		if err != nil {
+			return renderedCount, fmt.Errorf("failed to find templates for component %s: %w", componentName, err)
+		}
+
+		// Render generated/kustomization.yaml
+		generatedKustomizationPath := filepath.Join(generatedPath, "kustomization.yaml")
+
+		// If no app specific templates found, use base template
+		if len(componentTemplates) == 0 {
+			templateName := "base.kustomization.yaml.tmpl"
+			if err := RenderKustomizationTemplate(site, componentName, &component, templateName, generatedKustomizationPath); err != nil {
+				return renderedCount, fmt.Errorf("failed to render base template for component %s: %w", componentName, err)
+			}
+			renderedCount++
+			continue
+		}
+
+		// Render all app specific templates into generated/ directory
+		for _, templateName := range componentTemplates {
+			// Convert template name to output filename
+			// e.g., "apps/pihole/kustomization.yaml.tmpl" -> "kustomization.yaml"
+			baseName := filepath.Base(templateName)
+			outputFileName := strings.TrimSuffix(baseName, ".tmpl")
+			outputPath := filepath.Join(generatedPath, outputFileName)
+
+			if err := RenderTemplate(site, componentName, &component, templateName, outputPath); err != nil {
+				return renderedCount, fmt.Errorf("failed to render template %s for component %s: %w", templateName, componentName, err)
+			}
+			renderedCount++
+		}
+	}
+	return renderedCount, nil
+	
 }
 
 // TemplateData holds the data used for templating
@@ -555,6 +575,32 @@ func copyAppBase(site *config.Site, appName string) error {
 	return nil
 }
 
+// copyBootstrapBase copies bootstrap base from cache to cluster directory
+func copyBootstrapBase(site *config.Site) error {
+	// Source: cache/stack/bootstrap/base
+	sourcePath := filepath.Join(getStackCacheDir(site), "stack", "bootstrap", "base")
+
+	// Check if source exists
+	if _, err := os.Stat(sourcePath); os.IsNotExist(err) {
+		return fmt.Errorf("bootstrap base not found in cache: %w", err)
+	}
+
+	// Destination: clusters/{site}/bootstrap/base
+	destPath := filepath.Join("clusters", site.Metadata.Name, "bootstrap", "base")
+
+	// Remove existing base directory
+	if err := os.RemoveAll(destPath); err != nil {
+		return fmt.Errorf("failed to remove existing bootstrap base: %w", err)
+	}
+
+	// Copy base
+	if err := copyDir(sourcePath, destPath); err != nil {
+		return fmt.Errorf("failed to copy bootstrap base: %w", err)
+	}
+
+	return nil
+}
+
 // copyInfraBase copies infrastructure base from cache to cluster directory
 func copyInfraBase(site *config.Site) error {
 	// Determine the provider
@@ -650,6 +696,12 @@ func copyFile(src, dst string) error {
 	if _, err := srcFile.WriteTo(dstFile); err != nil {
 		return err
 	}
+
+	return nil
+}
+
+func renderBootstrapTemplate(site *config.Site, templateName, outputPath string, data interface{}) error {
+	filepath.Join(getStackCacheDir(site), "stack", "bootstrap", "templates", templateName)
 
 	return nil
 }
